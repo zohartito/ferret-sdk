@@ -1,0 +1,47 @@
+{
+  "_comment": "Golden baseline for tests/eval_reconstruct.py. Regenerate with `python tests/eval_reconstruct.py --update-baseline` after an INTENTIONAL change to the reconstruct/meshpipe geometry path. The synthetic input is a known box rendered from 12 turntable views and fused via the deterministic numpy point-merge + convex-hull path (prefer_tsdf=False), so these numbers do not depend on Open3D/PyMeshLab being installed.",
+  "input": {
+    "primitive": "box",
+    "extents_mm": [
+      80.0,
+      60.0,
+      50.0
+    ],
+    "n_views": 12,
+    "standoff_mm": 600.0,
+    "subdivisions": 4
+  },
+  "raw_mesh": {
+    "vertex_count": 152,
+    "face_count": 300,
+    "watertight": true,
+    "euler_number": 2,
+    "sorted_extents_mm": [
+      51.03,
+      61.27,
+      81.149
+    ],
+    "max_dim_rel_error": 0.0212
+  },
+  "clean_mesh": {
+    "vertex_count": 152,
+    "face_count": 300,
+    "components_after": 1,
+    "watertight": true,
+    "euler_number": 2,
+    "sorted_extents_mm": [
+      51.03,
+      61.27,
+      81.149
+    ]
+  },
+  "tolerances": {
+    "_comment": "Counts are bounded by a wide [min, max] band, NOT a tight relative tolerance: fuse() tries an alpha-shape before falling back to convex_hull, so the exact vertex/face count is a Qhull/trimesh-version artifact that can vary across environments. The hard regression gates are dimensional accuracy (max_dim_rel_error_abs) and the structural invariants (watertight, single component, bbox dims within extents_abs_mm) -- those hold for any faithful reconstruction of the box.",
+    "vertex_count_min": 8,
+    "vertex_count_max": 13000,
+    "face_count_min": 12,
+    "face_count_max": 26000,
+    "extents_abs_mm": 3.0,
+    "max_dim_rel_error_abs": 0.05
+  }
+}
