@@ -11,18 +11,27 @@ fighting the macOS USB stack.
 - We pull real frames this way: IR (Y8), raw disparity (Y14), and the daemon's **computed metric depth** (16-bit, mm via scale `0.2`).
 
 ## Status
+The full `ferret` package + pipeline now exist and are tested **offline** (47/47
+tests pass; the live device is never touched). See [COMPLETION-REPORT.md](COMPLETION-REPORT.md)
+for the per-component breakdown, the exact numbers, and what still needs hardware.
+
 | Capability | State |
 |---|---|
-| Connect to daemon, enumerate device | ✅ working, replug-robust (auto-discovers device id) |
-| Pull IR frame (Y8) | ✅ |
-| Pull **metric depth** over RPC | ✅ working — `ferret_rpc_depth.py` returns Y16 depth (× 0.2 mm) when the daemon is in depth mode; verified coherent depth map |
-| Robust to raw-Y14 mode | ⚠️ TODO — when the daemon returns 1.79 MB raw Y14 instead of depth, unpack 14-bit + disparity→depth (calibration in PROTOCOL.md); needs a raw sample to validate |
-| Reconstruction (depth → mesh), MCP server, turntable | ⬜ planned |
+| Connect to daemon, enumerate device | ✅ probe proven; refactored into `ferret.capture` (live path not re-run, safety) |
+| Pull IR frame (Y8) | ✅ probe proven; `FerretCamera.get_ir()` coded, decode untested on real Y8 |
+| Pull **metric depth** over RPC | ✅ working — Y16 (× 0.2 mm) decode reproduces real `rpc_depth.npy` byte-exact |
+| Robust to raw-Y14 mode | ✅ decode built + tested — 14-bit unpack round-trips exactly; disparity→depth self-consistent with `z0`; high sentinel `0x3FFF` rejected. ⚠️ live daemon delivery of Y14 still unconfirmed |
+| `ferret.calib` — intrinsics + depth→points (meters) | ✅ 5/5 tests on real frame; 183 412-pt cloud |
+| `ferret.reconstruct` — point cloud + TSDF/numpy fusion | ✅ 7/7 tests; real frame → PLY, synthetic box recovers bbox within ~2% |
+| `ferret.meshpipe` — clean / decimate / Z-up / watch | ✅ 4/4 tests; 81 985→50 000 faces, 106→1 components, watertight |
+| `ferret_mcp.py` — MCP server (5 tools) | ✅ 7/7 tests; `depth_stats` + `reconstruct_pointcloud` + `clean_mesh` verified offline |
+| `hardware/turntable` — CAD + firmware + host | ✅ STL renders watertight (200×200×12 mm); host control 14/14 tests vs fake serial; firmware flash unverified (no board) |
 
-**Last mile:** `get_frame` returns raw Y14 *or* computed depth depending on the
-daemon's processing mode, which the GUI sets via its scan-start `send_data` setup.
-Two ways to lock it: (A) replay that setup from one real-scan capture, or
-(B) unpack Y14 + convert with the calibration in [PROTOCOL.md](PROTOCOL.md).
+**Live-device caveat:** the capture RPC sequence is refactored verbatim from the
+proven probe but, per the hard safety rule, was **not** re-run against the daemon
+this session. `get_frame` returns raw Y14 *or* computed depth depending on the
+daemon's processing mode; the Y14 path is now coded + unit-tested, but whether the
+daemon actually emits Y14 (vs computed Y16) still needs one live raw capture to confirm.
 
 ## Quickstart
 ```bash
@@ -33,17 +42,23 @@ python3 probe/ferret_rpc_depth.py        # -> rpc_depth.npy + rpc_depth_preview.
 
 ## Layout
 ```
-probe/
+ferret/                 # the SDK package (built + tested offline)
+  calib.py              # intrinsics(w,h); depth_to_points(depth_mm, intr) -> Nx3 meters
+  capture.py            # FerretCamera (Y16 ×0.2 + Y14 unpack→disparity→depth); suffix auto-discovery
+  rpc_client.py         # package-local copy of the msgpack-RPC client
+  reconstruct.py        # depth_to_pointcloud / fuse (Open3D TSDF or numpy) / save_ply / save_obj
+  meshpipe.py           # clean_mesh (largest comp, fill holes, recenter, Z-up, decimate) + watch_folder
+ferret_mcp.py           # MCP server (FastMCP): depth_stats, reconstruct_pointcloud, clean_mesh, turntable_rotate, list_artifacts
+hardware/turntable/     # turntable.scad + firmware/turntable.ino + turntable_control.py + BOM
+tests/                  # pytest suite (47 tests, all offline)
+artifacts/              # inspectable outputs: PLY / OBJ / STL / PNG
+probe/                  # original device-cracking scripts + the REAL captured rpc_depth.npy
   ferret_rpc_depth.py   # main: pull depth via daemon RPC (auto-discovers device id)
   rpc_client.py         # minimal msgpack-RPC (rpclib) client for the daemon
-  rpc_view.py           # render a frame multiple ways (format/resolution ID)
-  decode_rpc_pcap.py    # decode a tcpdump capture of the GUI<->daemon traffic
-  depth_spike.py        # ctypes binding to libOrbbecSDK (USB + net-device paths)
-  grab_ir.sh            # IR grab via ffmpeg/AVFoundation (macOS exposes IR only)
 ARCHITECTURE.md         # system design + platform decision
 BUILD-PLAN.md           # phased plan
-RPC-CLIENT-PLAN.md      # the RPC-client investigation that cracked the protocol
 PROTOCOL.md             # confirmed wire protocol + calibration (the crown jewel)
+COMPLETION-REPORT.md    # honest per-component build/verify report
 ```
 
 ## Hardware
