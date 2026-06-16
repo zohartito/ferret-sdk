@@ -25,7 +25,9 @@ ART = PROJECT / "artifacts"
 
 
 def main() -> int:
-    src = Path(sys.argv[1] if len(sys.argv) > 1 else ART / "motorcycle_pc.ply")
+    default = ART / "motorcycle_pc.ply"
+    arg = sys.argv[1] if len(sys.argv) > 1 else None
+    src = Path(arg) if arg and Path(arg).exists() else default  # ignore stray args (e.g. pasted '#')
     print("=" * 70)
     print("FERRET SDK  --  POINT CLOUD -> RHINO-READY MESH")
     print("=" * 70)
