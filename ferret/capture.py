@@ -22,6 +22,7 @@ and are what the offline tests exercise.
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -242,9 +243,10 @@ class FerretCamera:
         """Stop the stream (best-effort) and close the socket."""
         if self._client is not None:
             if self._streaming and self._suffix is not None:
-                try:
+                try:  # GUI uses the 5-arg form; matches start_stream for a clean stop
                     self._client.call(self._method("ob_rpc_stop_stream"),
-                                      timeout=3.0)
+                                      OB_SENSOR_DEPTH, self.fmt, NATIVE_WIDTH,
+                                      NATIVE_HEIGHT, DEFAULT_FPS, timeout=3.0)
                 except Exception:
                     pass  # closing the socket also stops the stream
             self._client.close()
@@ -327,4 +329,5 @@ class FerretCamera:
                      if isinstance(x, (bytes, bytearray)) and len(x) > 1000]
             if slots:
                 return max(slots, key=len)
+            time.sleep(0.04)  # give the sensor time to warm up / produce a frame
         raise TimeoutError("no non-empty frame received within poll budget")
