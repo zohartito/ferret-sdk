@@ -1,0 +1,11 @@
+# regenerable / large capture artifacts
+*.pcap
+*.npy
+*.bin
+*.mp4
+probe/Log/
+__pycache__/
+*.pyc
+.DS_Store
+.venv/
+venv/
