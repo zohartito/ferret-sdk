@@ -15,8 +15,8 @@ fighting the macOS USB stack.
 |---|---|
 | Connect to daemon, enumerate device | ✅ working, replug-robust (auto-discovers device id) |
 | Pull IR frame (Y8) | ✅ |
-| Pull metric depth frame | ✅ proven (center 308 mm, ~94% valid) |
-| Reliable depth every run regardless of daemon mode | ⚠️ last mile — see below |
+| Pull **metric depth** over RPC | ✅ working — `ferret_rpc_depth.py` returns Y16 depth (× 0.2 mm) when the daemon is in depth mode; verified coherent depth map |
+| Robust to raw-Y14 mode | ⚠️ TODO — when the daemon returns 1.79 MB raw Y14 instead of depth, unpack 14-bit + disparity→depth (calibration in PROTOCOL.md); needs a raw sample to validate |
 | Reconstruction (depth → mesh), MCP server, turntable | ⬜ planned |
 
 **Last mile:** `get_frame` returns raw Y14 *or* computed depth depending on the

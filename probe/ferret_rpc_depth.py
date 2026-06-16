@@ -98,8 +98,8 @@ def main():
             print(f"  ...waiting for data (get_frame {i})")
         time.sleep(0.04)
 
-    try:
-        c.call(m("ob_rpc_stop_stream"), sensor, timeout=3.0)
+    try:  # match the GUI's 5-arg stop so the stream shuts down cleanly
+        c.call(m("ob_rpc_stop_stream"), sensor, fmt, W, H, FPS, timeout=3.0)
     except Exception:
         pass
     c.close()
@@ -108,7 +108,11 @@ def main():
         print("no non-empty frame received.")
         return
 
+    (OUT / "rpc_raw_frame.bin").write_bytes(got)  # raw bytes for offline iteration
     n = len(got)
+    print(f"saved raw frame -> rpc_raw_frame.bin ({n} bytes)")
+    if n == 1792000:
+        print("  = raw Y14 packed (1280x800, 14-bit). Convert offline with calibration.")
     if n % 2 != 0:
         (OUT / "rpc_frame.bin").write_bytes(got)
         print(f"odd size {n} — saved raw to rpc_frame.bin")
