@@ -50,6 +50,10 @@ DEFAULT_TARGET_FACES = 50_000
 # openings are intentional geometry (e.g. the open base of an unclosed scan)
 # and filling them would distort the model.
 DEFAULT_MAX_HOLE_EDGES = 30
+# Recovery hole budget used only to re-close boundaries that decimation punches
+# into an already-closed surface. Decimation holes are far larger than a normal
+# "small" hole, so this cap is intentionally generous to guarantee watertightness.
+_DECIMATION_HOLE_RECOVERY_EDGES = 100_000
 
 
 def _load_mesh(path: Path) -> trimesh.Trimesh:
@@ -156,12 +160,19 @@ def _fill_holes_pymeshlab(
 def _decimate(mesh: trimesh.Trimesh, target_faces: int) -> trimesh.Trimesh:
     """Reduce face count to roughly ``target_faces``.
 
-    Prefers Open3D's quadric decimation (better surface preservation); falls
-    back to trimesh's simplification, and finally returns the mesh untouched if
-    no decimation backend is available.
+    Prefers trimesh's quadric simplification (fast_simplification backend): on a
+    closed input it preserves watertightness, which Open3D's decimation does not
+    -- Open3D tends to punch a boundary loop into the surface (euler drops to 1).
+    Falls back to Open3D, then returns the mesh untouched if no backend is
+    available. The clean_mesh recovery fill closes any boundary a fallback opens.
     """
     if mesh.faces.shape[0] <= target_faces:
         return mesh
+
+    try:
+        return mesh.simplify_quadric_decimation(face_count=int(target_faces))
+    except Exception:  # noqa: BLE001 - backend (fast_simplification) optional
+        pass
 
     if _HAS_OPEN3D:
         o3d_mesh = o3d.geometry.TriangleMesh(
@@ -177,10 +188,7 @@ def _decimate(mesh: trimesh.Trimesh, target_faces: int) -> trimesh.Trimesh:
             process=False,
         )
 
-    try:
-        return mesh.simplify_quadric_decimation(face_count=int(target_faces))
-    except Exception:  # noqa: BLE001 - backend (fast_simplification) optional
-        return mesh
+    return mesh
 
 
 def _recenter_and_orient(mesh: trimesh.Trimesh) -> None:
@@ -243,6 +251,16 @@ def clean_mesh(
     _recenter_and_orient(mesh)
     mesh = _decimate(mesh, target_faces)
     _remove_bad_geometry(mesh)
+
+    # Quadric decimation (Open3D in particular) can punch a boundary loop into an
+    # otherwise-closed surface, leaving it non-watertight (euler == 1). These
+    # decimation holes are large -- far bigger than ``max_hole_edges`` -- so the
+    # recovery fill uses a generous hole budget to close whatever boundary the
+    # decimator created and restore a watertight, genus-0 solid. trimesh's filler
+    # only closes small triangular gaps, so PyMeshLab is required for this step.
+    if not mesh.is_watertight and _HAS_PYMESHLAB:
+        mesh = _fill_holes_pymeshlab(mesh, _DECIMATION_HOLE_RECOVERY_EDGES)
+        _remove_bad_geometry(mesh)
 
     components_after = _count_components(mesh)
     faces_after = int(mesh.faces.shape[0])

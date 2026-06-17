@@ -20,6 +20,13 @@ import ferret_mcp
 
 REAL_DEPTH = ROOT / "probe" / "rpc_depth.npy"
 
+# The real depth frame is git-ignored (*.npy) and absent on a fresh checkout /
+# in CI. Tests that need it are skipped (not failed) when it is missing.
+requires_real_depth = pytest.mark.skipif(
+    not REAL_DEPTH.is_file(),
+    reason=f"real depth fixture missing (git-ignored): {REAL_DEPTH}",
+)
+
 EXPECTED_TOOLS = {
     "depth_stats",
     "reconstruct_pointcloud",
@@ -43,8 +50,8 @@ def test_expected_tools_registered():
     assert not missing, f"missing tools: {missing}"
 
 
+@requires_real_depth
 def test_depth_stats_on_real_frame():
-    assert REAL_DEPTH.is_file(), f"real depth frame missing: {REAL_DEPTH}"
     stats = ferret_mcp.depth_stats(str(REAL_DEPTH))
 
     assert stats["shape"] == [800, 640]
@@ -82,13 +89,13 @@ def test_list_artifacts_shape():
     assert isinstance(result["files"], list)
 
 
+@requires_real_depth
 @pytest.mark.skipif(
     pytest.importorskip("ferret.reconstruct", reason="ferret.reconstruct not built yet")
     is None,
     reason="ferret.reconstruct not built yet",
 )
 def test_reconstruct_pointcloud_writes_ply():
-    assert REAL_DEPTH.is_file(), f"real depth frame missing: {REAL_DEPTH}"
     result = ferret_mcp.reconstruct_pointcloud(str(REAL_DEPTH), out_name="test_mcp_scan.ply")
 
     ply_path = Path(result["ply_path"])

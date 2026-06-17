@@ -27,6 +27,14 @@ PROBE = Path(__file__).resolve().parent.parent / "probe"
 RAW_FRAME = PROBE / "rpc_raw_frame.bin"
 DEPTH_NPY = PROBE / "rpc_depth.npy"
 
+# The captured raw frame (*.bin) and decoded depth (*.npy) are git-ignored and
+# absent on a fresh checkout / in CI. The Y16-decode-of-real-data test is
+# skipped (not failed) when either fixture is missing.
+requires_real_frame = pytest.mark.skipif(
+    not (RAW_FRAME.is_file() and DEPTH_NPY.is_file()),
+    reason=f"real capture fixtures missing (git-ignored): {RAW_FRAME}, {DEPTH_NPY}",
+)
+
 
 # (a) ---------------------------------------------------------------- import smoke
 def test_import_smoke():
@@ -87,6 +95,7 @@ def test_y14_rejects_bad_length():
 
 
 # (c) ----------------------------------------- Y16 decode of the REAL captured data
+@requires_real_frame
 def test_y16_decode_matches_saved_depth():
     """decode_y16_depth_mm(rpc_raw_frame.bin) reproduces rpc_depth.npy * 0.2."""
     raw_bytes = RAW_FRAME.read_bytes()

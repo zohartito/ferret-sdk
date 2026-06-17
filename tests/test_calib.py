@@ -25,6 +25,13 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 REAL_DEPTH_NPY = PROJECT_ROOT / "probe" / "rpc_depth.npy"
 ARTIFACT_PLY = PROJECT_ROOT / "artifacts" / "real_depth_pointcloud.ply"
 
+# The real captured frame is git-ignored (*.npy) and absent on a fresh checkout
+# / in CI. Tests that need it are skipped (not failed) when it is missing.
+requires_real_depth = pytest.mark.skipif(
+    not REAL_DEPTH_NPY.is_file(),
+    reason=f"real depth fixture missing (git-ignored): {REAL_DEPTH_NPY}",
+)
+
 
 def _load_real_depth_mm() -> np.ndarray:
     """Load the real raw frame and convert to millimetres (float32)."""
@@ -74,6 +81,7 @@ def test_intrinsics_rejects_nonpositive():
         intrinsics(640, -1)
 
 
+@requires_real_depth
 def test_point_count_matches_valid_pixels():
     """Every in-range valid pixel becomes exactly one point."""
     depth_mm = _load_real_depth_mm()
@@ -96,6 +104,7 @@ def test_point_count_matches_valid_pixels():
     assert points.shape[0] > 0
 
 
+@requires_real_depth
 def test_metric_bounds_are_physically_sane():
     """Z (and thus the whole cloud) sits in a believable close-range band."""
     depth_mm = _load_real_depth_mm()
@@ -116,6 +125,7 @@ def test_metric_bounds_are_physically_sane():
     assert np.abs(points[:, 1]).max() <= z.max() * max_half_fov_ratio + 1e-3
 
 
+@requires_real_depth
 def test_writes_real_pointcloud_artifact():
     """Persist the real cloud to a PLY artifact and sanity-check the file."""
     depth_mm = _load_real_depth_mm()
