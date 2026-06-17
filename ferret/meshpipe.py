@@ -160,12 +160,19 @@ def _fill_holes_pymeshlab(
 def _decimate(mesh: trimesh.Trimesh, target_faces: int) -> trimesh.Trimesh:
     """Reduce face count to roughly ``target_faces``.
 
-    Prefers Open3D's quadric decimation (better surface preservation); falls
-    back to trimesh's simplification, and finally returns the mesh untouched if
-    no decimation backend is available.
+    Prefers trimesh's quadric simplification (fast_simplification backend): on a
+    closed input it preserves watertightness, which Open3D's decimation does not
+    -- Open3D tends to punch a boundary loop into the surface (euler drops to 1).
+    Falls back to Open3D, then returns the mesh untouched if no backend is
+    available. The clean_mesh recovery fill closes any boundary a fallback opens.
     """
     if mesh.faces.shape[0] <= target_faces:
         return mesh
+
+    try:
+        return mesh.simplify_quadric_decimation(face_count=int(target_faces))
+    except Exception:  # noqa: BLE001 - backend (fast_simplification) optional
+        pass
 
     if _HAS_OPEN3D:
         o3d_mesh = o3d.geometry.TriangleMesh(
@@ -181,10 +188,7 @@ def _decimate(mesh: trimesh.Trimesh, target_faces: int) -> trimesh.Trimesh:
             process=False,
         )
 
-    try:
-        return mesh.simplify_quadric_decimation(face_count=int(target_faces))
-    except Exception:  # noqa: BLE001 - backend (fast_simplification) optional
-        return mesh
+    return mesh
 
 
 def _recenter_and_orient(mesh: trimesh.Trimesh) -> None:
