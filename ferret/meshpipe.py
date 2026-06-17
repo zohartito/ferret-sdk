@@ -244,6 +244,16 @@ def clean_mesh(
     mesh = _decimate(mesh, target_faces)
     _remove_bad_geometry(mesh)
 
+    # Quadric decimation (Open3D in particular) can open boundary edges and
+    # leave the surface non-watertight. Re-close small holes and clean up so the
+    # exported solid is watertight regardless of which decimation backend ran.
+    if not mesh.is_watertight:
+        if _HAS_PYMESHLAB:
+            mesh = _fill_holes_pymeshlab(mesh, max_hole_edges)
+        else:
+            mesh = _fill_holes_trimesh(mesh)
+        _remove_bad_geometry(mesh)
+
     components_after = _count_components(mesh)
     faces_after = int(mesh.faces.shape[0])
 
