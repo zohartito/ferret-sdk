@@ -34,10 +34,27 @@ daemon's processing mode; the Y14 path is now coded + unit-tested, but whether t
 daemon actually emits Y14 (vs computed Y16) still needs one live raw capture to confirm.
 
 ## Quickstart
+
+**Requires Python 3.11.** `open3d` has no wheel for 3.12 / 3.13 / 3.14, so
+`pip install -r requirements.txt` fails on a newer default `python3`. Create the
+venv with 3.11 explicitly:
+
 ```bash
-pip install -r requirements.txt          # numpy, msgpack
+python3.11 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+```
+
+### Offline demo (works on a fresh clone — no scanner, no daemon)
+```bash
+.venv/bin/pytest -q                                        # 47 offline tests
+.venv/bin/python examples/render_mesh.py \
+  artifacts/motorcycle_rhino_ready.obj                     # render committed mesh
+```
+
+### Live capture (needs the hardware)
+```bash
 # CrealityScan's RPCServer daemon must be running (launch CrealityScan once)
-python3 probe/ferret_rpc_depth.py        # -> rpc_depth.npy + rpc_depth_preview.png
+.venv/bin/python probe/ferret_rpc_depth.py   # -> rpc_depth.npy + rpc_depth_preview.png
 ```
 
 ## Layout
