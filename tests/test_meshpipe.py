@@ -116,6 +116,39 @@ def test_clean_mesh_drops_stray_component() -> None:
     out_path.unlink(missing_ok=True)
 
 
+def test_clean_mesh_rejects_input_above_byte_limit(tmp_path: Path, monkeypatch) -> None:
+    in_path = tmp_path / "too_large.obj"
+    in_path.write_text("v 0 0 0\n")
+    monkeypatch.setattr(meshpipe, "MAX_MESH_INPUT_BYTES", 1)
+
+    with pytest.raises(ValueError, match="byte limit"):
+        meshpipe.clean_mesh(in_path, tmp_path / "out.obj")
+
+
+def test_clean_mesh_obj_output_is_single_file(tmp_path: Path) -> None:
+    source = tmp_path / "source.obj"
+    output = tmp_path / "clean.obj"
+    trimesh.creation.icosphere(subdivisions=1).export(source)
+
+    meshpipe.clean_mesh(source, output)
+
+    assert output.is_file()
+    assert not output.with_suffix(".mtl").exists()
+
+
+def test_textured_obj_output_is_refused_without_sidecars(tmp_path: Path) -> None:
+    mesh = trimesh.creation.box()
+    mesh.visual = trimesh.visual.texture.TextureVisuals(
+        uv=np.zeros((len(mesh.vertices), 2))
+    )
+    output = tmp_path / "textured.obj"
+
+    with pytest.raises(ValueError, match="textured OBJ output is disabled"):
+        meshpipe._prepare_single_file_output(mesh, output)
+    assert not output.exists()
+    assert not output.with_suffix(".mtl").exists()
+
+
 def test_recenter_puts_centroid_at_origin() -> None:
     box = trimesh.creation.box(extents=(1.0, 1.0, 1.0))
     box.apply_translation([100.0, -50.0, 25.0])

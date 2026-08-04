@@ -50,6 +50,10 @@ DEFAULT_TARGET_FACES = 50_000
 # openings are intentional geometry (e.g. the open base of an unclosed scan)
 # and filling them would distort the model.
 DEFAULT_MAX_HOLE_EDGES = 30
+MAX_MESH_INPUT_BYTES = 64 * 1024 * 1024
+MAX_MESH_VERTICES = 250_000
+MAX_MESH_FACES = 500_000
+MAX_MESH_OUTPUT_FACES = 100_000
 # Recovery hole budget used only to re-close boundaries that decimation punches
 # into an already-closed surface. Decimation holes are far larger than a normal
 # "small" hole, so this cap is intentionally generous to guarantee watertightness.
@@ -64,6 +68,20 @@ def _load_mesh(path: Path) -> trimesh.Trimesh:
     if not isinstance(loaded, trimesh.Trimesh) or loaded.faces.shape[0] == 0:
         raise ValueError(f"No triangle mesh found in {path}")
     return loaded
+
+
+def _prepare_single_file_output(mesh: trimesh.Trimesh, out_path: Path) -> None:
+    """Reject textured OBJ output and strip visuals from supported OBJ exports.
+
+    trimesh can create MTL/image sidecars for textured OBJ exports.  The MCP
+    worker owns only its temporary mesh file, not arbitrary sibling sidecars,
+    so emitting those sidecars would violate the cleanup/confinement boundary.
+    """
+    if out_path.suffix.lower() != ".obj":
+        return
+    if getattr(mesh.visual, "kind", None) == "texture":
+        raise ValueError("textured OBJ output is disabled; choose a single-file format")
+    mesh.visual = trimesh.visual.ColorVisuals(mesh=mesh)
 
 
 def _face_components(mesh: trimesh.Trimesh) -> tuple[int, np.ndarray]:
@@ -233,9 +251,21 @@ def clean_mesh(
     """
     in_path = Path(in_path)
     out_path = Path(out_path)
+    if not in_path.is_file():
+        raise FileNotFoundError(f"mesh input not found: {in_path}")
+    if in_path.stat().st_size > MAX_MESH_INPUT_BYTES:
+        raise ValueError(f"mesh input exceeds {MAX_MESH_INPUT_BYTES} byte limit")
+    if not 1 <= target_faces <= MAX_MESH_OUTPUT_FACES:
+        raise ValueError(f"target_faces must be between 1 and {MAX_MESH_OUTPUT_FACES}")
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     mesh = _load_mesh(in_path)
+    _prepare_single_file_output(mesh, out_path)
+    if (
+        mesh.vertices.shape[0] > MAX_MESH_VERTICES
+        or mesh.faces.shape[0] > MAX_MESH_FACES
+    ):
+        raise ValueError("mesh exceeds vertex/face processing limits")
     faces_before = int(mesh.faces.shape[0])
     components_before = _count_components(mesh)
 
@@ -264,6 +294,8 @@ def clean_mesh(
 
     components_after = _count_components(mesh)
     faces_after = int(mesh.faces.shape[0])
+    if faces_after > MAX_MESH_OUTPUT_FACES:
+        raise ValueError("mesh output exceeds face-count limit")
 
     mesh.export(out_path)
 

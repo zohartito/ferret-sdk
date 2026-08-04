@@ -1,0 +1,4 @@
+# Disabled security tombstone -- not in .github/workflows, so GitHub cannot
+# trigger or run it. Restore only after an owner attests a reviewed immutable
+# full SHA for claude-code-action and deliberately re-establishes least privilege.
+# The former workflow exposed CLAUDE_CODE_OAUTH_TOKEN to a mutable action tag.

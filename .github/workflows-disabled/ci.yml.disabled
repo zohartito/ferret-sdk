@@ -1,0 +1,4 @@
+# Disabled security tombstone -- not in .github/workflows, so GitHub cannot
+# trigger or run it. Restore only after reviewed immutable full-SHA attestations
+# exist for checkout, setup-python, and gitleaks, with least-privilege tokens.
+# Original CI and secret scanning were intentionally disabled on 2026-08-03.
