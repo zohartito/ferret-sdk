@@ -16,6 +16,16 @@ python3 ~/.agent-kit/verify_loop.py --task "<what to do>" --verify "pytest -q" -
 ## Layout
 `artifacts/`, `examples/`, `ferret/`, `hardware/`, `logs/`, `probe/`, `tests/`
 
+## Loops
+- **`eval-gate` (EVENT, on push)** — golden-baseline reconstruction eval as a push gate.
+  - Runner: `tests/eval_gate.py` (emits `loop-result/v1` JSON to stdout; exit code = gate).
+  - Workflow: `.github/workflows/eval-gate.yml` runs it on push (paths-filtered) via `--ci`.
+  - Why it exists: `tests/eval_reconstruct.py` is outside pytest's default `test_*.py`
+    glob, so `pytest -q` (the PR CI) never runs the golden baseline. This gate targets it.
+  - Baseline: `tests/eval_reconstruct_baseline.json` — regenerate only on an INTENTIONAL
+    geometry change with `python tests/eval_reconstruct.py --update-baseline`.
+  - Flywheel: local runs append one line to `.claude/LEARNINGS.md`; `--ci`/`--dry-run` skip it.
+
 ## Conventions
 - Follow CONVENTIONS.md (if present) and the global ~/.claude/CLAUDE.md.
 - Make surgical, single-purpose changes; match existing style.
