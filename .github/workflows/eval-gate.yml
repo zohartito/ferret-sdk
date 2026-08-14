@@ -41,7 +41,7 @@ jobs:
         run: python tests/eval_gate.py --ci | tee eval-gate-result.json
       - name: Upload eval result
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: eval-gate-result
           path: eval-gate-result.json
