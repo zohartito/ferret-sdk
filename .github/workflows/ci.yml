@@ -12,6 +12,7 @@ concurrency:
 permissions:
   contents: read
 
+  pull-requests: read
 jobs:
   test:
     name: Test on ubuntu-latest / Python 3.12
