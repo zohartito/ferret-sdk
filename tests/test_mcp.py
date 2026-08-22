@@ -586,7 +586,11 @@ def test_list_artifacts_shape():
     is None,
     reason="ferret.reconstruct not built yet",
 )
-def test_reconstruct_pointcloud_writes_ply():
+def test_reconstruct_pointcloud_writes_ply(tmp_path, monkeypatch):
+    # Hermetic: point ARTIFACTS_DIR at tmp_path so the run never collides with
+    # the committed artifacts/test_mcp_scan.ply (_write_ply_exclusive refuses
+    # to overwrite via O_EXCL).
+    monkeypatch.setattr(ferret_mcp, "ARTIFACTS_DIR", tmp_path)
     result = ferret_mcp.reconstruct_pointcloud(str(REAL_DEPTH), out_name="test_mcp_scan.ply")
 
     ply_path = Path(result["ply_path"])
