@@ -247,7 +247,11 @@ class FerretCamera:
             raise RpcError(
                 "could not discover device RPC suffix — is the daemon up and the "
                 "scanner connected? (open CrealityScan once)")
-        self._start_stream(OB_SENSOR_DEPTH, self.fmt)
+        try:
+            self._start_stream(OB_SENSOR_DEPTH, self.fmt)
+        except BaseException:
+            self.close()  # don't leak the socket on a failed start
+            raise
         return self
 
     def close(self) -> None:

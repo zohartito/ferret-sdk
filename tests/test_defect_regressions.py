@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 
 from ferret import capture
+from ferret.rpc_client import RpcError
 
 
 # --- D2 -----------------------------------------------------------------------
@@ -66,3 +67,37 @@ def test_decode_depth_still_accepts_both_complete_modes():
     depth16 = cam._decode_depth(y16.tobytes())
     assert depth16.shape == (800, 640)
     assert float(depth16[0, 0]) == pytest.approx(200.0)
+
+
+# --- D4 -----------------------------------------------------------------------
+class _FakeRpcClient:
+    """Stand-in for MsgpackRpcClient: no sockets, records lifecycle."""
+
+    last_instance = None
+
+    def __init__(self, host="127.0.0.1", port=10010, timeout=5.0):
+        self.closed = False
+        self.calls: list[str] = []
+        type(self).last_instance = self
+
+    def call(self, method, *params, timeout=5.0):
+        self.calls.append(method)
+        if method.startswith("ob_get_stream_profile_list"):
+            return [[0, 24, 1280, 800, 30]]
+        raise RpcError("simulated start_stream failure")
+
+    def close(self):
+        self.closed = True
+
+
+def test_open_closes_socket_when_start_stream_fails(tmp_path, monkeypatch):
+    """If start_stream errors after suffix discovery succeeded, open() must
+    close the socket before propagating — the old code leaked it."""
+    log = tmp_path / "ScannerStreamSDK.log"
+    log.write_text("1-2-1.0 | CR-Scan Ferret Depth Camera\n")
+    monkeypatch.setattr(capture, "MsgpackRpcClient", _FakeRpcClient)
+
+    cam = capture.FerretCamera(log_path=log)
+    with pytest.raises(RpcError, match="start_stream"):
+        cam.open()
+    assert _FakeRpcClient.last_instance.closed, "open() leaked the RPC socket"
