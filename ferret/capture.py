@@ -43,13 +43,17 @@ NATIVE_WIDTH, NATIVE_HEIGHT = 1280, 800   # IR sensor / raw Y14 resolution
 DEPTH_WIDTH, DEPTH_HEIGHT = 640, 800      # computed-depth (Y16) resolution
 DEFAULT_FPS = 30
 
-# Frame byte sizes -> (height, width). Used to interpret a Y16 byte blob.
-# Y16 is 2 bytes/pixel, so byte_count // 2 must equal width * height. Only the
-# 800x640 entry is verified against real captured data; other sizes fall through
-# to the 640-wide heuristic in decode_y16_depth_mm rather than risk a guessed
-# shape that would raise on reshape.
+# Frame byte sizes -> (height, width) for computed-Y16 depth blobs. Y16 is
+# 2 bytes/pixel, so byte_count // 2 must equal width * height. Only the 800x640
+# entry is verified against real captured data; the others are the resolutions
+# observed in probe/ferret_rpc_depth.py. The dispatcher treats these (plus the
+# exact Y14 size) as the ONLY complete frame sizes, so a truncated payload
+# raises instead of being silently mis-decoded as a smaller Y16 frame.
 _Y16_SHAPE_TABLE = {
-    1_024_000: (800, 640),  # 800 * 640 * 2 = 1,024,000 — verified on real data
+    512_000: (400, 640),     # 400 * 640 * 2
+    960_000: (800, 600),     # 800 * 600 * 2
+    1_024_000: (800, 640),   # verified on real data
+    2_048_000: (800, 1280),  # full-sensor computed depth
 }
 
 DEPTH_VALUE_SCALE = 0.2     # Y16 depth value -> millimetres
@@ -286,15 +290,24 @@ class FerretCamera:
 
     # -- decode dispatch ----------------------------------------------------
     def _decode_depth(self, blob: bytes) -> np.ndarray:
-        """Pick the Y16 or Y14 decode path from the frame byte length."""
+        """Pick the Y16 or Y14 decode path from the frame byte length.
+
+        Only COMPLETE frame sizes are accepted (the exact Y14 packed size, or a
+        known computed-Y16 resolution). Anything else — notably a truncated Y14
+        payload, which is usually still an even byte count — raises instead of
+        being silently decoded into garbage geometry.
+        """
         size = len(blob)
         y14_full = NATIVE_WIDTH * NATIVE_HEIGHT * 14 // 8  # 1,792,000
         if size == y14_full:
             raw_disp = unpack_y14(blob, NATIVE_WIDTH, NATIVE_HEIGHT)
             return disparity_to_depth_mm(raw_disp, self.calib)
-        if size % 2 == 0:
+        if size in _Y16_SHAPE_TABLE:
             return decode_y16_depth_mm(blob)
-        raise ValueError(f"unrecognised depth frame size: {size} bytes")
+        raise ValueError(
+            f"unrecognised depth frame size: {size} bytes "
+            f"(expected {y14_full} (Y14) or one of "
+            f"{sorted(_Y16_SHAPE_TABLE)} (Y16))")
 
     # -- low-level RPC ------------------------------------------------------
     def _method(self, base: str) -> str:
