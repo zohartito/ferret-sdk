@@ -56,6 +56,10 @@ DEPTH_VALUE_SCALE = 0.2     # Y16 depth value -> millimetres
 Y16_INVALID = (0, 0xFFFF)   # sentinel raw values
 Y14_INVALID = 0x3FFF        # 14-bit all-ones = "no return" in raw disparity
 MIN_VALID_DEPTH_MM = 50.0   # close-range floor; reject bogus near-points
+# Close-range ceiling, mirroring ferret.calib.MAX_VALID_DEPTH_M (8.0 m). Without
+# it a raw disparity just above the zero term yields an absurd far "depth"
+# (e.g. raw 437 -> ~286 m) that leaks into reconstruction as garbage geometry.
+MAX_VALID_DEPTH_MM = 8000.0
 
 LOG_PATH = Path("/Library/Creality/Log/ScannerStreamSDK.log")
 CONTROL_PORT = 10010
@@ -146,15 +150,18 @@ def disparity_to_depth_mm(raw_disparity: np.ndarray,
 
     Invalid pixels map to 0: the all-ones 14-bit sentinel (0x3FFF, "no return"),
     a non-positive disparity term, or a depth outside the plausible close-range
-    band. Returns float32 HxW with the same shape as ``raw_disparity``.
+    band [MIN_VALID_DEPTH_MM, MAX_VALID_DEPTH_MM]. Returns float32 HxW with the
+    same shape as ``raw_disparity``.
     """
     raw = np.asarray(raw_disparity, dtype=np.float32)
     disparity = raw * calib.unit - calib.disp_offset
     depth = np.zeros_like(raw, dtype=np.float32)
     valid = (disparity > 0) & (raw < Y14_INVALID)
     depth[valid] = (calib.baseline * calib.focal_pix) / disparity[valid]
-    # Reject absurdly-near survivors (e.g. raw just under the sentinel).
+    # Reject absurdly-near survivors (e.g. raw just under the sentinel) and
+    # absurdly-far ones (raw just above the zero-disparity term).
     depth[depth < MIN_VALID_DEPTH_MM] = 0.0
+    depth[depth > MAX_VALID_DEPTH_MM] = 0.0
     return depth
 
 
