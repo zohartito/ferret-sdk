@@ -24,6 +24,7 @@ from .frames import (
     flooded_sentinel_y14,
     golden_y16_payload,
     ir_payload,
+    depth_u16_payload,
     synthetic_depth_u16,
     synthetic_disparity,
 )
@@ -41,6 +42,7 @@ __all__ = [
     "flooded_sentinel_y14",
     "golden_y16_payload",
     "ir_payload",
+    "depth_u16_payload",
     "synthetic_depth_u16",
     "synthetic_disparity",
 ]

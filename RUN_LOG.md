@@ -113,3 +113,38 @@ $ .venv/bin/pytest -q
 Golden replay highlight: probe/rpc_depth.npy served over the RPC path decodes
 through FerretCamera.get_depth_mm() and recovers every raw uint16 exactly
 (`np.array_equal(recovered, golden_raw)`), matching the offline decode guarantee.
+
+## Phase 4 — end-to-end simulated proof
+
+```
+$ .venv/bin/python examples/e2e_simulated.py
+======================================================================
+FERRET SDK  --  SIMULATED END-TO-END (fakeferret daemon)
+======================================================================
+[fakeferret] serving 12 Y16 frames (1,024,000 B each) on 127.0.0.1:20100
+[capture]   12 frames decoded via FerretCamera.get_depth_mm
+[gate]      per-view median depth vs scene truth: max err 0.004% (scene medians ~572.3 mm at 600 mm standoff)
+[gate]      recovered bbox  : [50.17 60.   80.17] mm (expected [50.0, 60.0, 80.0], max rel err 0.34%)
+[gate]      watertight      : True
+[gate]      components      : 2 -> 1
+[gate]      faces           : 232 -> 220
+[artifacts] .../artifacts/e2e_sim_clean.obj  + e2e_sim_render.png (1,044 B)
+
+E2E RESULT: PASS — simulated scan reproduced the box within all gates
+EXIT=0
+```
+
+Scene notes (disclosed): the renderer casts one analytic ray per pixel
+(slab test) instead of splatting vertices — vertex splats carried a +2.1%
+pixel-rounding bias identical to the eval baseline's 2.12%. A 10 mm stray
+"island" is injected post-fuse because the deterministic synthetic scene is
+noise-free; it exercises clean_mesh component reduction (2 -> 1).
+
+```
+$ .venv/bin/pytest -q
+87 passed in 2.92s
+
+$ .venv/bin/python tests/eval_gate.py --dry-run     # exit 0, PASS JSON above
+GATE EXIT=0
+$ git diff main --stat -- tests/eval_reconstruct_baseline.json   # empty: untouched
+```
