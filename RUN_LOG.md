@@ -91,3 +91,25 @@ Fix: try/close()/raise around _start_stream.
 after D1: 71 passed   after D2: 73 passed
 after D3: 75 passed   after D4: 76 passed
 ```
+
+## Phase 3 — fakeferret simulator
+
+Built `fakeferret/` (server.py: threaded msgpack-RPC daemon on 127.0.0.1:20010+,
+frames.py: wire-format payload builders). FerretCamera runs UNMODIFIED against
+it; only host/port/log_path are injected.
+
+One server bug found while testing: warm-up slots never advanced the frame
+counter, so `warmup_frames>0` looped forever -> FerretCamera TimeoutError.
+Fixed in `_on_get_frame` before commit.
+
+```
+$ .venv/bin/pytest -q tests/test_fakeferret.py
+11 passed in 0.52s
+
+$ .venv/bin/pytest -q
+87 passed in 5.40s
+```
+
+Golden replay highlight: probe/rpc_depth.npy served over the RPC path decodes
+through FerretCamera.get_depth_mm() and recovers every raw uint16 exactly
+(`np.array_equal(recovered, golden_raw)`), matching the offline decode guarantee.
