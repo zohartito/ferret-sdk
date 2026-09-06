@@ -20,7 +20,7 @@ from pathlib import Path
 from queue import Empty
 
 import numpy as np
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 # depth_mm = raw_uint16 * DEPTH_VALUE_SCALE; 0 and 65535 are invalid/no-return.
 DEPTH_VALUE_SCALE = 0.2
@@ -45,7 +45,7 @@ MESH_ADDRESS_SPACE_BYTES = 1_024 * 1024 * 1024
 MESH_OUTPUT_BYTES = 64 * 1024 * 1024
 MESH_OUTPUT_SUFFIXES = {".obj", ".ply", ".stl", ".off", ".glb"}
 
-mcp = FastMCP("ferret")
+mcp = MCPServer("ferret")
 
 
 def _load_depth_mm(depth_npy_path: str) -> np.ndarray:
