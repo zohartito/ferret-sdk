@@ -1,6 +1,6 @@
 """Tests for ferret_mcp without needing a live MCP client.
 
-Verifies the expected tools are registered on the FastMCP server and exercises
+Verifies the expected tools are registered on the MCPServer instance and exercises
 the underlying tool callables directly against the real probe depth frame.
 """
 

@@ -65,7 +65,7 @@ ferret/                 # the SDK package (built + tested offline)
   rpc_client.py         # package-local copy of the msgpack-RPC client
   reconstruct.py        # depth_to_pointcloud / fuse (Open3D TSDF or numpy) / save_ply / save_obj
   meshpipe.py           # clean_mesh (largest comp, fill holes, recenter, Z-up, decimate) + watch_folder
-ferret_mcp.py           # MCP server (FastMCP): depth_stats, reconstruct_pointcloud, clean_mesh, turntable_rotate, list_artifacts
+ferret_mcp.py           # MCP server (MCPServer): depth_stats, reconstruct_pointcloud, clean_mesh, turntable_rotate, list_artifacts
 hardware/turntable/     # turntable.scad + firmware/turntable.ino + turntable_control.py + BOM
 tests/                  # pytest suite (47 tests, all offline)
 artifacts/              # inspectable outputs: PLY / OBJ / STL / PNG
