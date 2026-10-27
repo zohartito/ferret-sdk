@@ -1,5 +1,5 @@
 numpy>=2.5.3
-msgpack>=1.2.2
+msgpack>=1.2.3
 trimesh>=5.1.0
 fast-simplification>=0.2.0  # watertight-preserving decimation backend for trimesh
 open3d>=0.20.0
