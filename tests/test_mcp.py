@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -187,6 +188,9 @@ def test_ply_fstat_failure_closes_fd_and_preserves_swapped_replacement(tmp_path,
     unrelated.write_bytes(b"keep")
     monkeypatch.setattr(ferret_mcp, "ARTIFACTS_DIR", artifacts)
     original_open = os.open
+    # Fault injection is local to the module so pytest can still use real file descriptors.
+    local_os = SimpleNamespace(**vars(os))
+    monkeypatch.setattr(ferret_mcp, "os", local_os)
     original_close = os.close
     created_fds: list[int] = []
     closed_fds: list[int] = []
@@ -208,9 +212,9 @@ def test_ply_fstat_failure_closes_fd_and_preserves_swapped_replacement(tmp_path,
         created_path.write_bytes(b"replacement")
         raise OSError("simulated fstat failure")
 
-    monkeypatch.setattr(os, "open", tracked_open)
-    monkeypatch.setattr(os, "close", tracked_close)
-    monkeypatch.setattr(os, "fstat", failed_fstat)
+    monkeypatch.setattr(local_os, "open", tracked_open)
+    monkeypatch.setattr(local_os, "close", tracked_close)
+    monkeypatch.setattr(local_os, "fstat", failed_fstat)
     with pytest.raises(OSError, match="simulated fstat failure"):
         ferret_mcp._write_ply_exclusive(
             "fstat-fail.ply", np.zeros((1, 3), dtype=np.float32)
@@ -224,6 +228,9 @@ def test_ply_fstat_failure_retains_unknown_partial_and_closes_fd(tmp_path, monke
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()
     monkeypatch.setattr(ferret_mcp, "ARTIFACTS_DIR", artifacts)
+    # Fault injection is local to the module so pytest can still use real file descriptors.
+    local_os = SimpleNamespace(**vars(os))
+    monkeypatch.setattr(ferret_mcp, "os", local_os)
     original_close = os.close
     closed_fds: list[int] = []
 
@@ -231,9 +238,9 @@ def test_ply_fstat_failure_retains_unknown_partial_and_closes_fd(tmp_path, monke
         closed_fds.append(file_fd)
         return original_close(file_fd)
 
-    monkeypatch.setattr(os, "close", tracked_close)
+    monkeypatch.setattr(local_os, "close", tracked_close)
     monkeypatch.setattr(
-        os,
+        local_os,
         "fstat",
         lambda _file_fd: (_ for _ in ()).throw(OSError("simulated fstat failure")),
     )
@@ -533,6 +540,9 @@ def test_mesh_temp_fstat_failure_closes_fd_and_preserves_swapped_replacement(
     unrelated = tmp_path / "unrelated.obj"
     unrelated.write_bytes(b"keep")
     original_open = os.open
+    # Fault injection is local to the module so pytest can still use real file descriptors.
+    local_os = SimpleNamespace(**vars(os))
+    monkeypatch.setattr(ferret_mcp, "os", local_os)
     original_close = os.close
     created_fds: list[int] = []
     closed_fds: list[int] = []
@@ -554,9 +564,9 @@ def test_mesh_temp_fstat_failure_closes_fd_and_preserves_swapped_replacement(
         created.write_bytes(b"replacement")
         raise OSError("simulated fstat failure")
 
-    monkeypatch.setattr(os, "open", tracked_open)
-    monkeypatch.setattr(os, "close", tracked_close)
-    monkeypatch.setattr(os, "fstat", failed_fstat)
+    monkeypatch.setattr(local_os, "open", tracked_open)
+    monkeypatch.setattr(local_os, "close", tracked_close)
+    monkeypatch.setattr(local_os, "fstat", failed_fstat)
     directory_fd = ferret_mcp._open_directory(tmp_path)
     try:
         with pytest.raises(OSError, match="simulated fstat failure"):
