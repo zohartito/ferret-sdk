@@ -33,7 +33,7 @@ in `depth_spike.py` (lines 155-253) verbatim. The only new work is binding three
 exports and calling `ob_create_net_device` on a **default** context (no Creality
 config) to get an `ob_device*` served by the daemon.
 
-### Exact code to ADD to `/Users/zohartito/projects/ferret-sdk/probe/depth_spike.py`
+### Exact code to ADD to `/path/to/ferret-sdk/probe/depth_spike.py`
 
 Add `c_uint16, c_bool` to the ctypes import on line 9:
 
@@ -122,7 +122,7 @@ via the RPCClientPort source ports.
 
 ```bash
 # Leave the daemon running. Try WITHOUT root first (loopback TCP needs no root):
-/opt/homebrew/bin/python3 /Users/zohartito/projects/ferret-sdk/probe/depth_spike.py
+/opt/homebrew/bin/python3 /path/to/ferret-sdk/probe/depth_spike.py
 ```
 
 ### Success criterion
@@ -188,7 +188,7 @@ sudo /usr/sbin/tcpdump -i lo0 -s 0 -w /tmp/rpc.pcap \
 ### Step 3 — decode the capture (stdlib-only decoder already written)
 
 ```bash
-/opt/homebrew/bin/python3 /Users/zohartito/projects/ferret-sdk/probe/decode_rpc_pcap.py /tmp/rpc.pcap
+/opt/homebrew/bin/python3 /path/to/ferret-sdk/probe/decode_rpc_pcap.py /tmp/rpc.pcap
 ```
 
 Read off: the exact 10010 call sequence (method names + param arrays + result
@@ -197,7 +197,7 @@ shapes — gives `getDeviceInfo`/`startStream` arity and types), and WHICH data 
 
 ### Step 4 — replay control + reassemble pixels
 
-Using `/Users/zohartito/projects/ferret-sdk/probe/rpc_client.py` (runs end-to-end):
+Using `/path/to/ferret-sdk/probe/rpc_client.py` (runs end-to-end):
 
 1. Hardcode the captured control sequence on `10010`:
    `getProtocolVersion`/`getCmdVersion` (handshake) -> `getDeviceInfo` (confirm PID
@@ -236,11 +236,11 @@ sendData, recvData, getFrame`.
 
 ## Relevant files
 
-- `/Users/zohartito/projects/ferret-sdk/probe/depth_spike.py` — working C-API
+- `/path/to/ferret-sdk/probe/depth_spike.py` — working C-API
   ctypes binding; reused verbatim from the pipeline step onward.
-- `/Users/zohartito/projects/ferret-sdk/probe/rpc_client.py` — msgpack-RPC client
+- `/path/to/ferret-sdk/probe/rpc_client.py` — msgpack-RPC client
   skeleton (connect/request/parse, runs).
-- `/Users/zohartito/projects/ferret-sdk/probe/decode_rpc_pcap.py` — stdlib pcap
+- `/path/to/ferret-sdk/probe/decode_rpc_pcap.py` — stdlib pcap
   decoder (BSD-loopback + IPv4/TCP reassembly, msgpack on 10010, 248B slicing on
   10011-13, 0x4321 hunt).
 - `/Library/Creality/libOrbbecSDK.1.7.1.dylib` — SDK (net exports confirmed).

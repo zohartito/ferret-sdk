@@ -104,7 +104,7 @@ Mirror Zohar's existing `tools-dashboard` pattern verbatim — do not invent a f
 - `scan_service.py` — stateful local HTTP service that owns sessions, talks to hardware + meshing (modeled on `serve.py`).
 - `scan_mcp.py` — stdlib-only thin MCP adapter (urllib/json), holds no state, forwards every tool call to the token-guarded local HTTP API (modeled on `mcp_server.py`, `X-Tools-Dashboard-Token`, `127.0.0.1`, protocol `2024-11-05`).
 - Copy `llm_backend.py` verbatim for the VLM judge so the `claude|ollama` toggle and prompts stay in one place.
-- **VLM judge:** `qwen2.5vl:7b` on `desktop-zt` (fits 16GB at Q4/Q5 with KV headroom), flip to `claude` for final accept/reject. The VLM never sees geometry — it grades `pyrender` PNGs (6–8 canonical views, defects color-coded) and returns strict JSON `{has_holes, suspect_regions, coverage_estimate, verdict}`.
+- **VLM judge:** `qwen2.5vl:7b` on `gpu-pc` (fits 16GB at Q4/Q5 with KV headroom), flip to `claude` for final accept/reject. The VLM never sees geometry — it grades `pyrender` PNGs (6–8 canonical views, defects color-coded) and returns strict JSON `{has_holes, suspect_regions, coverage_estimate, verdict}`.
 - **Hard rule: VLM proposes, deterministic geometry confirms, code executes.** The VLM never alone triggers a re-scan, a motor move, or a print. Open-boundary loops / manifold tests / local point density make the final call. Bambu MQTT print-start is gated behind explicit human confirmation. Re-scan loop is bounded (max N passes).
 
 ### 3.5 Turntable Layer
@@ -116,7 +116,7 @@ Mirror Zohar's existing `tools-dashboard` pattern verbatim — do not invent a f
 
 ## 4. Platform Decision
 
-**Build the capture + reconstruction host on the Windows 11 desktop, using WSL2 Ubuntu for raw capture. Use the Mac strictly as a thin dev/agent client over Tailscale (`desktop-zt`). macOS is IR-only and a dead end for depth.**
+**Build the capture + reconstruction host on the Windows 11 desktop, using WSL2 Ubuntu for raw capture. Use the Mac strictly as a thin dev/agent client over Tailscale (`gpu-pc`). macOS is IR-only and a dead end for depth.**
 
 Reasoning, tempered by the verifications:
 

@@ -114,11 +114,11 @@ auto-processed and cataloged into the Obsidian vault.
 **Concrete tasks:**
 1. `watch_daemon.py`: `watchdog` on the CrealityScan export dir; on each new `OBJ/STL/PLY` call `postprocess.py` + `render_views.py`.
 2. Catalog into the vault: copy output to `Creations/3D-Scans/`, append a session line to `Daily/YYYY-MM-DD.md`, write a markdown quality report (tri count, watertight, bbox mm, open-boundary count, filled-region flag).
-3. **Optional** (config flag, default OFF): copy `llm_backend.py`; run `qwen2.5vl:7b` over the thumbnails for a one-sentence defect note appended to the report. Health-check `desktop-zt:11434` first; fail fast with the Claude fallback if the PC is off.
+3. **Optional** (config flag, default OFF): copy `llm_backend.py`; run `qwen2.5vl:7b` over the thumbnails for a one-sentence defect note appended to the report. Health-check `gpu-pc:11434` first; fail fast with the Claude fallback if the PC is off.
 
 **✅ VERIFIABLE SUCCESS CRITERION:** dropping a fresh `.obj` into the watched folder produces, within 30 s and with no manual step, a `_clean.obj` + thumbnails in `Creations/3D-Scans/` AND a new dated entry in the vault `Daily/` log.
 
-**Dependencies:** Phase B1; `watchdog`; vault path; (optional) `llm_backend.py` + Ollama on `desktop-zt`.
+**Dependencies:** Phase B1; `watchdog`; vault path; (optional) `llm_backend.py` + Ollama on `gpu-pc`.
 
 ---
 
@@ -202,7 +202,7 @@ under the "VLM proposes, geometry confirms, code executes" rule.
 
 **✅ VERIFIABLE SUCCESS CRITERION:** on an object scanned with a deliberate gap, the loop detects the hole (VLM proposes + geometry confirms an open-boundary loop at that region), issues a targeted `turntable_rotate` + re-capture, and the re-integrated mesh has **fewer open-boundary loops** than before — without any unconfirmed VLM-only action.
 
-**Dependencies:** Phase 4; Ollama `qwen2.5vl:7b` on `desktop-zt`; Claude fallback via `llm_backend.py`.
+**Dependencies:** Phase 4; Ollama `qwen2.5vl:7b` on `gpu-pc`; Claude fallback via `llm_backend.py`.
 
 ---
 

@@ -4,6 +4,11 @@ Tapping a **Creality CR-Scan Ferret** 3D scanner from code (and ultimately an LL
 on **macOS** — by riding the Orbbec daemon CrealityScan already runs, instead of
 fighting the macOS USB stack.
 
+> **Unofficial.** This project is not affiliated with or endorsed by Creality or
+> Orbbec. No Creality or Orbbec binaries are included: you need your own
+> CrealityScan install, which ships the daemon and SDK this client talks to.
+> The code here is MIT (see [LICENSE](LICENSE)).
+
 ## TL;DR — what we learned
 - The Ferret is an **Orbbec depth camera** driven by the **Orbbec SDK** (`libOrbbecSDK.1.7.1.dylib`, shipped inside CrealityScan). No proprietary capture algorithm to crack.
 - CrealityScan runs a **root daemon `RPCServer`** that owns the USB device and serves it over **msgpack-RPC (rpclib)** on `127.0.0.1:10010` (control) + `10011–10013` (aux). The GUI is just an RPC client.

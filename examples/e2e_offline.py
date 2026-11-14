@@ -14,7 +14,7 @@ Chains the whole pipeline without ever touching the live scanner:
              -> final solid artifacts/e2e_synth_clean.obj
 
 Run it:
-    /Users/zohartito/projects/ferret-sdk/.venv/bin/python examples/e2e_offline.py
+    /path/to/ferret-sdk/.venv/bin/python examples/e2e_offline.py
 
 It prints a numbered summary with concrete numbers for every stage and exits
 non-zero if any stage fails, so it doubles as a CI smoke test.

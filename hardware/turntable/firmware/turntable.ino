@@ -41,7 +41,7 @@ static const bool  INVERT_DIR      = false; // flip if CCW/CW is reversed
 #if ENABLE_MQTT
   static const char* WIFI_SSID   = "your-ssid";
   static const char* WIFI_PASS   = "your-pass";
-  static const char* MQTT_HOST   = "192.168.1.10";
+  static const char* MQTT_HOST   = "your-mqtt-host";
   static const int   MQTT_PORT   = 1883;
   static const char* MQTT_USER   = "";      // optional
   static const char* MQTT_PASS   = "";      // optional

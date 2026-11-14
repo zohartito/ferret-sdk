@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import trimesh
 
-ARTIFACTS = Path("/Users/zohartito/projects/ferret-sdk/artifacts")
+ARTIFACTS = Path(__file__).resolve().parents[2] / "artifacts"
 STL_PATH = ARTIFACTS / "turntable.stl"
 
 EXPECTED_DIAMETER_MM = 200.0

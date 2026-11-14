@@ -114,15 +114,15 @@ These are honest gaps — none are bugs, all require hardware we deliberately di
 
 ## Artifacts to inspect (absolute paths)
 
-- `/Users/zohartito/projects/ferret-sdk/artifacts/real_recon.ply` — real frame → 183 412-pt cloud (regenerated post-fix)
-- `/Users/zohartito/projects/ferret-sdk/artifacts/real_depth_pointcloud.ply` — calib's real-frame cloud
-- `/Users/zohartito/projects/ferret-sdk/artifacts/synthetic_recon.obj` — fused synthetic box (watertight)
-- `/Users/zohartito/projects/ferret-sdk/artifacts/cleaned_output.obj` — meshpipe output (50 000 faces, 1 component, watertight)
-- `/Users/zohartito/projects/ferret-sdk/artifacts/messy_input.obj` — its messy input (106 components)
-- `/Users/zohartito/projects/ferret-sdk/artifacts/test_mcp_scan.ply` — MCP `reconstruct_pointcloud` output
-- `/Users/zohartito/projects/ferret-sdk/artifacts/capture_y16_depth_preview.png` — Y16 depth preview
-- `/Users/zohartito/projects/ferret-sdk/artifacts/capture_y16_depth_mm.npy`, `capture_y14_depth_mm_synth.npy` — decoded depth arrays
-- `/Users/zohartito/projects/ferret-sdk/artifacts/turntable.stl`, `turntable.png` — 200×200×12 mm platter + preview
+- `/path/to/ferret-sdk/artifacts/real_recon.ply` — real frame → 183 412-pt cloud (regenerated post-fix)
+- `/path/to/ferret-sdk/artifacts/real_depth_pointcloud.ply` — calib's real-frame cloud
+- `/path/to/ferret-sdk/artifacts/synthetic_recon.obj` — fused synthetic box (watertight)
+- `/path/to/ferret-sdk/artifacts/cleaned_output.obj` — meshpipe output (50 000 faces, 1 component, watertight)
+- `/path/to/ferret-sdk/artifacts/messy_input.obj` — its messy input (106 components)
+- `/path/to/ferret-sdk/artifacts/test_mcp_scan.ply` — MCP `reconstruct_pointcloud` output
+- `/path/to/ferret-sdk/artifacts/capture_y16_depth_preview.png` — Y16 depth preview
+- `/path/to/ferret-sdk/artifacts/capture_y16_depth_mm.npy`, `capture_y14_depth_mm_synth.npy` — decoded depth arrays
+- `/path/to/ferret-sdk/artifacts/turntable.stl`, `turntable.png` — 200×200×12 mm platter + preview
 
 Inspect a PLY/OBJ quickly:
 ```bash

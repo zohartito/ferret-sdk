@@ -5,7 +5,7 @@ Code) can run depth statistics, point-cloud reconstruction, mesh cleanup, and
 a turntable rotation stub without touching the live scanner.
 
 Install (wire into Claude Code):
-    claude mcp add ferret -- /Users/zohartito/projects/ferret-sdk/.venv/bin/python /Users/zohartito/projects/ferret-sdk/ferret_mcp.py
+    claude mcp add ferret -- /path/to/ferret-sdk/.venv/bin/python /path/to/ferret-sdk/ferret_mcp.py
 
 The tool callables are also importable for testing (see tests/test_mcp.py):
     from ferret_mcp import depth_stats, reconstruct_pointcloud, clean_mesh, ...
