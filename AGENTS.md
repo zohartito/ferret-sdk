@@ -13,6 +13,8 @@ Tapping a **Creality CR-Scan Ferret** 3D scanner from code (and ultimately an LL
   only for a known computed-depth daemon mode. IR switches to IR_RIGHT/Y8 (FER-02).
 - The depth probe accepts an explicit Y14/Y16 output mode and saves float32 mm;
   its fake-RPC regression tests must not connect to the daemon (FER-03).
+- Turntable step_sequence returns an iterator: each next() moves once, then
+  yields for capture. Tests use fake serial transports only (FER-05).
 
 ## Self-improving loop (close the loop)
 Run an agent until it verifies its own output, then commit:
