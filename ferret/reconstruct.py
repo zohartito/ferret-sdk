@@ -41,6 +41,7 @@ except ImportError:  # pragma: no cover
 _FOCAL_PIX_NATIVE = 956.671
 _NATIVE_IR_WIDTH = 1280
 _DEPTH_VALUE_SCALE = 0.2  # raw uint16 -> millimeters
+_TSDF_MAX_RESOLUTION = 256  # voxels per side of the uniform TSDF cube (~130 MB)
 
 
 def _intrinsics(width: int, height: int) -> tuple[float, float, float, float]:
@@ -207,7 +208,10 @@ def fuse(
                       (3x3). For a turntable, the object is rotated, so the pose
                       that brings every frame into a common world frame is the
                       inverse of the turntable rotation.
-        voxel_mm:     TSDF voxel size in millimeters (Open3D path only).
+        voxel_mm:     TSDF voxel size in millimeters (Open3D path only); coarsened
+                      when the scene needs more than _TSDF_MAX_RESOLUTION voxels
+                      per side. ``mesh.metadata["fusion_backend"]`` records which
+                      path built the mesh ("open3d_tsdf" or "numpy_points").
         prefer_tsdf:  use Open3D TSDF when available. Set False to force the
                       numpy point-merge + hull path, which is preferable for
                       sparse / point-sampled depth where TSDF over-carves.
@@ -217,13 +221,17 @@ def fuse(
     """
     if prefer_tsdf and _HAS_OPEN3D:
         try:
-            return _fuse_open3d(depth_frames, poses, voxel_mm)
+            mesh = _fuse_open3d(depth_frames, poses, voxel_mm)
+            mesh.metadata["fusion_backend"] = "open3d_tsdf"
+            return mesh
         except Exception:
             # Any TSDF hiccup (degenerate intrinsics, empty frame) -> numpy path.
             pass
 
     points = _merge_points(depth_frames, poses)
-    return _mesh_from_points(points)
+    mesh = _mesh_from_points(points)
+    mesh.metadata["fusion_backend"] = "numpy_points"  # FER-10: callers can tell which path ran
+    return mesh
 
 
 def _fuse_open3d(
@@ -241,10 +249,22 @@ def _fuse_open3d(
     fx, fy, cx, cy = _intrinsics(width, height)
     o3d_intr = o3d.camera.PinholeCameraIntrinsic(width, height, fx, fy, cx, cy)
 
-    volume = o3d.pipelines.integration.ScalableTSDFVolume(
-        voxel_length=voxel_mm / 1000.0,
-        sdf_trunc=(voxel_mm * 5.0) / 1000.0,
+    # FER-10: Open3D 0.20.0's ScalableTSDFVolume integrates nothing on macOS arm64
+    # (even Open3D's own PrimeSense example), while UniformTSDFVolume works. Size a
+    # uniform cube to the posed depth points, with room for the truncation band.
+    points = _merge_points(depth_frames, poses)
+    if points.shape[0] == 0:
+        raise RuntimeError("no valid depth to fuse")
+    sdf_trunc = (voxel_mm * 5.0) / 1000.0
+    lower = points.min(axis=0).astype(np.float64) - 2.0 * sdf_trunc
+    length = float(np.ptp(points, axis=0).max()) + 4.0 * sdf_trunc
+    resolution = int(min(_TSDF_MAX_RESOLUTION, max(8, np.ceil(length / (voxel_mm / 1000.0)))))
+    volume = o3d.pipelines.integration.UniformTSDFVolume(
+        length=length,
+        resolution=resolution,
+        sdf_trunc=sdf_trunc,
         color_type=o3d.pipelines.integration.TSDFVolumeColorType.NoColor,
+        origin=lower,
     )
 
     for depth, pose in zip(depth_frames, poses):
@@ -275,7 +295,9 @@ def _fuse_open3d(
     faces = np.asarray(o3d_mesh.triangles, dtype=np.int64)
     if len(faces) == 0:
         raise RuntimeError("TSDF produced an empty mesh")
-    return trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+    mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+    mesh.metadata["tsdf_voxel_mm"] = length / resolution * 1000.0
+    return mesh
 
 
 # --- IO ------------------------------------------------------------------------

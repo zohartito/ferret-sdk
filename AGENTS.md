@@ -4,8 +4,31 @@
 Tapping a **Creality CR-Scan Ferret** 3D scanner from code (and ultimately an LLM)
 
 ## How to verify a change
+- Install: Python 3.12, `python -m pip install -r requirements-lock.txt` (FER-01/13).
 - Tests: `pytest -q`
+- Linux needs system OpenGL libs (libgl1, libopengl0, libegl1) for Open3D and PyMeshLab; CI installs them and
+  fails if either import fails, so their tests cannot skip silently.
+- Test exports belong in pytest tmp_path; never overwrite tracked artifacts.
+  The suite-hygiene regression checks artifact hashes around mesh tests (FER-N1).
 - Lint:  `(none detected)`
+- Native TSDF uses UniformTSDFVolume (Open3D 0.20 ScalableTSDFVolume is empty on macOS arm64);
+  fuse() sets mesh.metadata["fusion_backend"] (FER-10).
+- MCP mesh acceptance must produce a mesh; macOS uses parent RSS monitoring
+  (50 ms sampling, 1 GiB termination threshold), CPU/file limits and a timeout (FER-04).
+- Capture tests use fake RPC only. Depth defaults to explicit Y14; select Y16
+  only for a known computed-depth daemon mode. IR switches to IR_RIGHT/Y8 (FER-02).
+- The depth probe accepts an explicit Y14/Y16 output mode and saves float32 mm;
+  its fake-RPC regression tests must not connect to the daemon (FER-03).
+- Turntable step_sequence returns an iterator: each next() moves once, then
+  yields for capture. Tests use fake serial transports only (FER-05).
+- Mesh recovery may close only holes introduced by decimating a previously
+  watertight mesh; original openings obey max_hole_edges, including zero (FER-06).
+- Fresh-clone E2E uses examples/synthetic_depth.py when private captures are
+  absent; outputs use ignored artifacts/offline-demo/ or --output-dir (FER-07).
+- watch_folder waits for two unchanged size/mtime polls and retries failures;
+  only successful cleanup marks a file processed (FER-09).
+- MCP clean_mesh publishes exclusively into ARTIFACTS_DIR by default. Explicit
+  overwrite=True permits regular-file replacement; all ancestors reject symlinks (FER-08).
 
 ## Self-improving loop (close the loop)
 Run an agent until it verifies its own output, then commit:

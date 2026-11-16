@@ -1,4 +1,8 @@
-# E2E Verification Log — ferret-sdk
+# Historical E2E Verification Log — ferret-sdk
+
+> Original private-fixture run; counts below are historical. See
+> [AUDIT-2026-11-15.md](AUDIT-2026-11-15.md) for versioned public-clone validation,
+> skip reasons and backend limitations.
 
 - **Date:** 2026-06-15
 - **Env:** `.venv` (Python 3.11.15) — open3d 0.19, pymeshlab, trimesh, numpy 2.4, mcp 1.27
@@ -10,7 +14,13 @@
 .venv/bin/python -m pytest tests/ -q   →  47 passed (2.4 s)
 ```
 
-## End-to-end offline pass — `examples/e2e_offline.py`  →  **PASS (clean)**
+## Historical private-fixture pass — not reproducible from the public clone
+
+The real `.npy`/`.bin` inputs and listed `.npy` artifacts below are not shipped.
+As of the 2026-11-15 audit fix (FER-07), `examples/e2e_offline.py` instead uses
+a labelled deterministic synthetic depth substitute when no real frame exists.
+Outputs go to `artifacts/offline-demo/` or `--output-dir`. This does not reproduce
+the historical real-capture measurements below.
 
 **Stage A — real depth → 3D point cloud**
 | field | value |

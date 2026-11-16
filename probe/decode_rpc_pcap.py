@@ -6,9 +6,10 @@ CAPTURE (run while CrealityScan is actively streaming depth):
     sudo tcpdump -i lo0 -s 0 -w /tmp/rpc.pcap \
         '(tcp port 10010 or tcp port 10011 or tcp port 10012 or tcp port 10013)'
 
-Then:  python3 decode_rpc_pcap.py /tmp/rpc.pcap
+Then (from the repo root): .venv/bin/python probe/decode_rpc_pcap.py /tmp/rpc.pcap
 
-This parses the pcap with the stdlib only (no scapy/dpkt needed), reassembles
+Requires third-party msgpack from requirements-lock.txt. The pcap parsing itself
+uses the stdlib (no scapy/dpkt needed), reassembles
 each TCP half-stream by (src,dst) port, and:
   - For the CONTROL port (10010): msgpack-unpacks the raw stream in BOTH
     directions and prints every RPC request/response with method + params,

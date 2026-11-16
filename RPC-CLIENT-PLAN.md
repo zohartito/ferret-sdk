@@ -171,10 +171,11 @@ Exact arities/param types for `startStream`/`getDeviceInfo` etc. and the 248-byt
 header field offsets are NOT string-exposed — they must come from a live capture of
 the GUI's traffic.
 
-### Step 1 — install msgpack (PEP 668 on Homebrew Python 3.14)
+### Step 1 — use the project Python 3.12 environment (includes msgpack)
 
 ```bash
-/opt/homebrew/bin/python3 -m pip install --user --break-system-packages msgpack
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -r requirements-lock.txt
 ```
 
 ### Step 2 — capture the GUI handshake (NEEDS ROOT for tcpdump)
@@ -185,10 +186,10 @@ sudo /usr/sbin/tcpdump -i lo0 -s 0 -w /tmp/rpc.pcap \
 # then in CrealityScan start a scan/preview so depth streams ~3-5s, Ctrl-C tcpdump
 ```
 
-### Step 3 — decode the capture (stdlib-only decoder already written)
+### Step 3 — decode the capture (requires third-party msgpack)
 
 ```bash
-/opt/homebrew/bin/python3 /path/to/ferret-sdk/probe/decode_rpc_pcap.py /tmp/rpc.pcap
+.venv/bin/python probe/decode_rpc_pcap.py /tmp/rpc.pcap
 ```
 
 Read off: the exact 10010 call sequence (method names + param arrays + result
@@ -240,8 +241,8 @@ sendData, recvData, getFrame`.
   ctypes binding; reused verbatim from the pipeline step onward.
 - `/path/to/ferret-sdk/probe/rpc_client.py` — msgpack-RPC client
   skeleton (connect/request/parse, runs).
-- `/path/to/ferret-sdk/probe/decode_rpc_pcap.py` — stdlib pcap
-  decoder (BSD-loopback + IPv4/TCP reassembly, msgpack on 10010, 248B slicing on
+- `/path/to/ferret-sdk/probe/decode_rpc_pcap.py` — stdlib pcap parsing with the
+  third-party `msgpack` dependency (BSD-loopback + IPv4/TCP reassembly, msgpack on 10010, 248B slicing on
   10011-13, 0x4321 hunt).
 - `/Library/Creality/libOrbbecSDK.1.7.1.dylib` — SDK (net exports confirmed).
 - `/Library/Creality/OrbbecSDKConfig_v1.0.xml` — do NOT load (server flag).

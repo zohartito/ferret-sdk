@@ -150,3 +150,77 @@ def test_disparity_rejects_y14_high_sentinel():
     ~18 mm near-point. The old code only rejected raw 0, leaking the high sentinel."""
     out = disparity_to_depth_mm(np.array([[0x3FFF]], dtype=np.float32))
     assert out[0, 0] == 0.0
+
+
+def test_ir_switches_stream_and_stops_matching_sensor(monkeypatch):
+    class Client:
+        calls = []
+        sensor = None
+
+        def __init__(self, **kwargs):
+            pass
+
+        def call(self, method, *args, **kwargs):
+            self.calls.append((method, args))
+            if method.startswith("ob_rpc_start_stream"):
+                self.sensor = args[0]
+            if method.startswith("ob_rpc_get_frame"):
+                if self.sensor == capture.OB_SENSOR_DEPTH:
+                    return [np.full((800, 640), 1000, dtype="<u2").tobytes()]
+                return [bytes([17]) * (800 * 1280)]
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(capture, "MsgpackRpcClient", Client)
+    monkeypatch.setattr(FerretCamera, "_discover_suffix", lambda self: "test")
+    with FerretCamera() as cam:
+        ir = cam.get_ir()
+        assert ir.shape == (800, 1280) and np.all(ir == 17)
+    stops = [args for method, args in Client.calls if "stop_stream" in method]
+    assert [args[:2] for args in stops] == [(capture.OB_SENSOR_DEPTH, capture.OB_FORMAT_Y14),
+                                          (capture.OB_SENSOR_IR_RIGHT, capture.OB_FORMAT_Y8)]
+
+
+def test_depth_rejects_equal_sized_ir_payload():
+    cam = FerretCamera()
+    with pytest.raises(ValueError, match="Y14"):
+        cam._decode_depth(bytes([17]) * (800 * 1280))
+
+
+def test_y16_rejects_unknown_dimensions():
+    with pytest.raises(ValueError, match="Y16"):
+        decode_y16_depth_mm(bytes(640 * 2))
+
+
+def test_explicit_depth_formats_and_sensor_validation():
+    y16 = np.full((800, 640), 1000, dtype="<u2").tobytes()
+    cam = FerretCamera(depth_format="Y16")
+    np.testing.assert_array_equal(cam._decode_depth(y16), np.full((800, 640), 200.0))
+    cam._sensor = capture.OB_SENSOR_IR_RIGHT
+    with pytest.raises(ValueError, match="depth sensor"):
+        cam._decode_depth(y16)
+    with pytest.raises(ValueError, match="pixel format"):
+        capture.decode_depth_frame(y16, capture.OB_SENSOR_DEPTH, "Y8")
+    raw = np.full((800, 1280), 872, dtype=np.uint16)
+    np.testing.assert_array_equal(FerretCamera()._decode_depth(pack_y14(raw)),
+                                  disparity_to_depth_mm(raw))
+
+
+def test_depth_switches_back_from_ir_and_rejects_ambiguous_frames():
+    calls = []
+
+    class Client:
+        def call(self, method, *args, **kwargs):
+            calls.append((method, args))
+            if "get_frame" in method:
+                return [bytes(800 * 1280), bytes(800 * 1280)]
+
+    cam = FerretCamera(depth_format="Y16")
+    cam._client, cam._suffix = Client(), "test"
+    cam._streaming = True
+    cam._sensor, cam._stream_fmt = capture.OB_SENSOR_IR_RIGHT, capture.OB_FORMAT_Y8
+    with pytest.raises(ValueError, match="ambiguous"):
+        cam.get_depth_mm()
+    assert calls[0][1][:2] == (capture.OB_SENSOR_IR_RIGHT, capture.OB_FORMAT_Y8)
+    assert calls[1][1][:2] == (capture.OB_SENSOR_DEPTH, capture.OB_FORMAT_Y14)

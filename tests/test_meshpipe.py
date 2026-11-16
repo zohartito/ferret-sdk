@@ -16,10 +16,6 @@ import trimesh
 
 from ferret import meshpipe
 
-ARTIFACTS = Path(__file__).resolve().parents[1] / "artifacts"
-MESSY_INPUT = ARTIFACTS / "messy_input.obj"
-CLEANED_OUTPUT = ARTIFACTS / "cleaned_output.obj"
-
 TARGET_FACES = meshpipe.DEFAULT_TARGET_FACES
 FACE_CAP = TARGET_FACES + 5_000  # decimation lands at-or-below target + slack
 
@@ -50,17 +46,18 @@ def _build_messy_mesh() -> trimesh.Trimesh:
     )
 
 
-def test_clean_mesh_produces_single_clean_solid() -> None:
-    ARTIFACTS.mkdir(parents=True, exist_ok=True)
+def test_clean_mesh_produces_single_clean_solid(tmp_path: Path) -> None:
+    messy_input = tmp_path / "messy_input.obj"
+    cleaned_output = tmp_path / "cleaned_output.obj"
 
     messy = _build_messy_mesh()
-    messy.export(MESSY_INPUT)
+    messy.export(messy_input)
 
     # Sanity: the input really is messy (multiple components).
     raw_components = meshpipe._count_components(messy)
     assert raw_components >= 2, "fixture should have a stray detached island"
 
-    stats = meshpipe.clean_mesh(MESSY_INPUT, CLEANED_OUTPUT, target_faces=TARGET_FACES)
+    stats = meshpipe.clean_mesh(messy_input, cleaned_output, target_faces=TARGET_FACES)
 
     # 1. Exactly one connected component remains.
     assert stats["components_after"] == 1, stats
@@ -79,7 +76,7 @@ def test_clean_mesh_produces_single_clean_solid() -> None:
     # this specific assertion (with the diagnostic) rather than fail the whole
     # test: the single-component collapse and decimation behaviour above are the
     # core guarantees and are still asserted unconditionally.
-    reloaded = trimesh.load(CLEANED_OUTPUT, process=False, force="mesh")
+    reloaded = trimesh.load(cleaned_output, process=False, force="mesh")
     near_watertight = reloaded.is_watertight or reloaded.euler_number == 2
     if not near_watertight:
         pytest.skip(
@@ -89,18 +86,18 @@ def test_clean_mesh_produces_single_clean_solid() -> None:
         )
 
     # 4. The output file was actually written.
-    assert CLEANED_OUTPUT.exists() and CLEANED_OUTPUT.stat().st_size > 0
+    assert cleaned_output.exists() and cleaned_output.stat().st_size > 0
 
 
-def test_clean_mesh_drops_stray_component() -> None:
+def test_clean_mesh_drops_stray_component(tmp_path: Path) -> None:
     """A two-island mesh should keep only the larger island's geometry."""
     big = trimesh.creation.icosphere(subdivisions=3, radius=1.0)
     small = trimesh.creation.box(extents=(0.1, 0.1, 0.1))
     small.apply_translation([10.0, 0.0, 0.0])
     two = trimesh.util.concatenate([big, small])
 
-    in_path = ARTIFACTS / "_two_island.obj"
-    out_path = ARTIFACTS / "_two_island_clean.obj"
+    in_path = tmp_path / "_two_island.obj"
+    out_path = tmp_path / "_two_island_clean.obj"
     two.export(in_path)
 
     stats = meshpipe.clean_mesh(in_path, out_path, target_faces=TARGET_FACES)
@@ -149,12 +146,12 @@ def test_textured_obj_output_is_refused_without_sidecars(tmp_path: Path) -> None
     assert not output.with_suffix(".mtl").exists()
 
 
-def test_recenter_puts_centroid_at_origin() -> None:
+def test_recenter_puts_centroid_at_origin(tmp_path: Path) -> None:
     box = trimesh.creation.box(extents=(1.0, 1.0, 1.0))
     box.apply_translation([100.0, -50.0, 25.0])
 
-    in_path = ARTIFACTS / "_offset_box.obj"
-    out_path = ARTIFACTS / "_offset_box_clean.obj"
+    in_path = tmp_path / "_offset_box.obj"
+    out_path = tmp_path / "_offset_box_clean.obj"
     box.export(in_path)
 
     meshpipe.clean_mesh(in_path, out_path, target_faces=TARGET_FACES)
@@ -166,7 +163,7 @@ def test_recenter_puts_centroid_at_origin() -> None:
 
 
 def test_watch_folder_processes_new_meshes(tmp_path: Path) -> None:
-    """One bounded poll cycle should clean every supported mesh in the inbox."""
+    """Two stable poll cycles should clean every supported mesh in the inbox."""
     in_dir = tmp_path / "in"
     out_dir = tmp_path / "out"
     in_dir.mkdir()
@@ -177,7 +174,7 @@ def test_watch_folder_processes_new_meshes(tmp_path: Path) -> None:
     (in_dir / "notes.txt").write_text("ignore me")  # non-mesh file is skipped
 
     results = meshpipe.watch_folder(
-        in_dir, out_dir, poll_interval=0.0, max_iterations=1
+        in_dir, out_dir, poll_interval=0.0, max_iterations=2
     )
 
     assert len(results) == 2
@@ -185,3 +182,90 @@ def test_watch_folder_processes_new_meshes(tmp_path: Path) -> None:
     assert cleaned_files == ["obj_a_clean.obj", "obj_b_clean.obj"]
     for stats in results:
         assert stats["components_after"] == 1
+
+
+@pytest.mark.parametrize("max_hole_edges", [0, 30])
+@pytest.mark.parametrize("target_faces", [50_000, 32])
+def test_original_open_boundaries_survive_cleanup(tmp_path, max_hole_edges, target_faces):
+    mesh = trimesh.creation.cylinder(radius=1, height=3, sections=32)
+    mesh.update_faces(np.abs(mesh.face_normals[:, 2]) < 0.5)
+    mesh.remove_unreferenced_vertices()
+    source, output = tmp_path / "open.obj", tmp_path / "clean.obj"
+    mesh.export(source)
+    result = meshpipe.clean_mesh(source, output, max_hole_edges=max_hole_edges,
+                                 target_faces=target_faces)
+    assert not result["watertight"]
+    if target_faces == 50_000:
+        assert result["faces_after"] == result["faces_before"] == 64
+
+
+def test_zero_hole_budget_without_pymeshlab(tmp_path, monkeypatch):
+    mesh = trimesh.creation.icosphere(subdivisions=1)
+    mesh.update_faces(np.arange(len(mesh.faces)) != 0)
+    source, output = tmp_path / "open.obj", tmp_path / "clean.obj"
+    mesh.export(source)
+    monkeypatch.setattr(meshpipe, "_HAS_PYMESHLAB", False)
+    result = meshpipe.clean_mesh(source, output, max_hole_edges=0)
+    assert not result["watertight"]
+    assert result["faces_after"] == len(mesh.faces)
+
+
+@pytest.mark.skipif(not meshpipe._HAS_PYMESHLAB, reason="decimation-hole recovery needs PyMeshLab")
+def test_recovery_closes_only_new_decimation_hole(tmp_path, monkeypatch):
+    mesh = trimesh.creation.icosphere(subdivisions=1)
+    source, output = tmp_path / "closed.obj", tmp_path / "clean.obj"
+    mesh.export(source)
+
+    def punch_hole(mesh, target_faces):
+        mesh.update_faces(np.arange(len(mesh.faces)) != 0)
+        return mesh
+
+    monkeypatch.setattr(meshpipe, "_decimate", punch_hole)
+    result = meshpipe.clean_mesh(source, output, target_faces=20, max_hole_edges=0)
+    assert result["watertight"]
+
+
+def test_trimesh_three_edge_budget_preserves_quad_hole():
+    mesh = trimesh.creation.box()
+    mesh.update_faces(mesh.face_normals[:, 2] < 0.5)
+    faces_before = len(mesh.faces)
+    result = meshpipe._fill_holes_trimesh(mesh, 3)
+    assert len(result.faces) == faces_before and not result.is_watertight
+
+
+def test_watch_folder_waits_for_completed_export(tmp_path, monkeypatch):
+    inbox, outbox = tmp_path / "in", tmp_path / "out"
+    inbox.mkdir()
+    source = inbox / "scan.obj"
+    source.write_text("v 0 0 0\nv 1 0 0\nv 0 1 0\n")
+    complete = False
+
+    def finish_export(_interval):
+        nonlocal complete
+        if not complete:
+            trimesh.creation.box().export(source)
+            complete = True
+
+    monkeypatch.setattr(meshpipe.time, "sleep", finish_export)
+    results = meshpipe.watch_folder(inbox, outbox, max_iterations=3)
+    assert len(results) == 1
+    assert (outbox / "scan_clean.obj").is_file()
+
+
+def test_watch_folder_retries_transient_failure(tmp_path, monkeypatch):
+    inbox = tmp_path / "in"
+    inbox.mkdir()
+    trimesh.creation.box().export(inbox / "scan.obj")
+    original = meshpipe.clean_mesh
+    attempts = []
+
+    def fail_once(*args, **kwargs):
+        attempts.append(args)
+        if len(attempts) == 1:
+            raise OSError("exporter still holds the file")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(meshpipe, "clean_mesh", fail_once)
+    results = meshpipe.watch_folder(inbox, tmp_path / "out", poll_interval=0,
+                                   max_iterations=3)
+    assert len(results) == 1 and len(attempts) == 2

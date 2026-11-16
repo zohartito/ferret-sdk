@@ -39,6 +39,73 @@ EXPECTED_TOOLS = {
 }
 
 
+@pytest.fixture(autouse=True)
+def approved_output_directory(tmp_path, monkeypatch):
+    monkeypatch.setattr(ferret_mcp, "ARTIFACTS_DIR", tmp_path)
+
+
+def test_clean_mesh_refuses_existing_output(tmp_path):
+    source, output = tmp_path / "source.obj", tmp_path / "keep.obj"
+    trimesh.creation.box().export(source)
+    output.write_bytes(b"unrelated existing mesh")
+    with pytest.raises(FileExistsError, match="overwrite"):
+        ferret_mcp.clean_mesh(str(source), str(output))
+    assert output.read_bytes() == b"unrelated existing mesh"
+
+
+def test_clean_mesh_confines_output(tmp_path, monkeypatch):
+    source, output = tmp_path / "source.obj", tmp_path / "outside.obj"
+    trimesh.creation.box().export(source)
+    monkeypatch.setattr(ferret_mcp, "ARTIFACTS_DIR", tmp_path / "approved")
+    with pytest.raises(ValueError, match="artifacts directory"):
+        ferret_mcp.clean_mesh(str(source), str(output))
+    assert not output.exists()
+
+
+def test_clean_mesh_rejects_symlink_ancestor(tmp_path, monkeypatch):
+    source = tmp_path / "source.obj"
+    trimesh.creation.box().export(source)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (tmp_path / "alias").symlink_to(outside, target_is_directory=True)
+    approved = tmp_path / "alias" / "artifacts"
+    monkeypatch.setattr(ferret_mcp, "ARTIFACTS_DIR", approved)
+    with pytest.raises(OSError):
+        ferret_mcp.clean_mesh(str(source), str(approved / "escaped.obj"))
+    assert not (outside / "artifacts" / "escaped.obj").exists()
+
+
+def test_clean_mesh_explicit_overwrite_and_symlink_refusal(tmp_path):
+    source, output = tmp_path / "source.obj", tmp_path / "replace.obj"
+    trimesh.creation.box().export(source)
+    output.write_bytes(b"authorized old mesh")
+    result = ferret_mcp.clean_mesh(str(source), output.name, overwrite=True)
+    assert result["written"] and Path(result["out_path"]) == output
+    assert len(trimesh.load(output, force="mesh").faces) == 12
+    link = tmp_path / "link.obj"
+    link.symlink_to(output)
+    original = output.read_bytes()
+    with pytest.raises(ValueError, match="symlink"):
+        ferret_mcp.clean_mesh(str(source), link.name, overwrite=True)
+    assert output.read_bytes() == original
+
+
+def test_clean_mesh_exclusive_publication_race(tmp_path, monkeypatch):
+    source, output = tmp_path / "source.obj", tmp_path / "raced.obj"
+    trimesh.creation.box().export(source)
+    original_link = os.link
+
+    def competing_publication(*args, **kwargs):
+        output.write_bytes(b"concurrent unrelated file")
+        return original_link(*args, **kwargs)
+
+    monkeypatch.setattr(ferret_mcp.os, "link", competing_publication)
+    with pytest.raises(FileExistsError):
+        ferret_mcp.clean_mesh(str(source), str(output))
+    assert output.read_bytes() == b"concurrent unrelated file"
+    assert not list(tmp_path.glob(".raced.*.obj"))
+
+
 def _registered_tool_names() -> set[str]:
     return {tool.name for tool in ferret_mcp.mcp._tool_manager.list_tools()}
 
@@ -271,16 +338,10 @@ def test_clean_mesh_runs_in_bounded_worker(tmp_path):
     output = tmp_path / "clean.obj"
     trimesh.creation.icosphere(subdivisions=1).export(source)
 
-    try:
-        result = ferret_mcp.clean_mesh(str(source), str(output))
-    except RuntimeError as exc:
-        # This macOS interpreter cannot apply RLIMIT_AS.  The MCP endpoint must
-        # reject rather than silently run native mesh processing without limits.
-        assert "required resource limits failed" in str(exc)
-        assert not output.exists()
-    else:
-        assert result["written"] is True
-        assert output.is_file()
+    result = ferret_mcp.clean_mesh(str(source), str(output))
+    assert result["written"] is True
+    assert output.is_file()
+    assert len(trimesh.load(output, force="mesh").faces) > 0
 
 
 def test_mesh_worker_refuses_when_resource_limits_cannot_be_applied(monkeypatch):
@@ -427,11 +488,38 @@ def test_timed_out_mesh_removes_owned_partial_tempfile(tmp_path, monkeypatch):
 
     context = Context()
     monkeypatch.setattr(ferret_mcp, "get_context", lambda _method: context)
+    monkeypatch.setattr(ferret_mcp, "_wait_mesh_worker", lambda worker: None)
     with pytest.raises(TimeoutError, match="exceeded MCP time limit"):
         ferret_mcp._bounded_clean_mesh(str(source), str(output))
     assert context.worker.terminated is True
     assert not output.exists()
     assert not list(tmp_path.glob(".clean.*.obj"))
+
+
+def test_macos_mesh_monitor_terminates_over_memory_budget(monkeypatch):
+    import psutil
+
+    class Worker:
+        pid = 123
+        alive = True
+
+        def is_alive(self):
+            return self.alive
+
+        def join(self, timeout):
+            pass
+
+        def terminate(self):
+            self.alive = False
+
+    monkeypatch.setattr(ferret_mcp.sys, "platform", "darwin")
+    monkeypatch.setattr(psutil, "Process", lambda pid: SimpleNamespace(
+        memory_info=lambda: SimpleNamespace(rss=ferret_mcp.MESH_ADDRESS_SPACE_BYTES + 1)
+    ))
+    worker = Worker()
+    with pytest.raises(RuntimeError, match="resident memory limit"):
+        ferret_mcp._wait_mesh_worker(worker)
+    assert not worker.is_alive()
 
 
 def test_oversize_mesh_output_removes_owned_partial_tempfile(tmp_path, monkeypatch):

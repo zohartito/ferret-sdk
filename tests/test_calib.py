@@ -3,7 +3,7 @@
 The real frame ``probe/rpc_depth.npy`` is a uint16 array (800x640) of raw depth
 values where ``mm = value * 0.2`` and 0 / 65535 are invalid. These tests verify
 the intrinsics scaling and that back-projection produces a physically sane
-metric point cloud, then dump the cloud to ``artifacts/real_depth_pointcloud.ply``.
+metric point cloud, then dump the cloud to a temporary PLY.
 """
 
 from __future__ import annotations
@@ -23,7 +23,6 @@ from ferret.calib import (
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 REAL_DEPTH_NPY = PROJECT_ROOT / "probe" / "rpc_depth.npy"
-ARTIFACT_PLY = PROJECT_ROOT / "artifacts" / "real_depth_pointcloud.ply"
 
 # The real captured frame is git-ignored (*.npy) and absent on a fresh checkout
 # / in CI. Tests that need it are skipped (not failed) when it is missing.
@@ -126,15 +125,16 @@ def test_metric_bounds_are_physically_sane():
 
 
 @requires_real_depth
-def test_writes_real_pointcloud_artifact():
+def test_writes_real_pointcloud_artifact(tmp_path):
     """Persist the real cloud to a PLY artifact and sanity-check the file."""
     depth_mm = _load_real_depth_mm()
     intr = intrinsics(depth_mm.shape[1], depth_mm.shape[0])
     points = depth_to_points(depth_mm, intr)
 
-    _write_ply(ARTIFACT_PLY, points)
-    assert ARTIFACT_PLY.exists()
+    artifact_ply = tmp_path / "real_depth_pointcloud.ply"
+    _write_ply(artifact_ply, points)
+    assert artifact_ply.exists()
 
-    header = ARTIFACT_PLY.read_bytes()[:200].decode("ascii", errors="replace")
+    header = artifact_ply.read_bytes()[:200].decode("ascii", errors="replace")
     assert "ply" in header
     assert f"element vertex {points.shape[0]}" in header

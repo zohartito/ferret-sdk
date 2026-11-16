@@ -125,7 +125,7 @@ def test_step_sequence_twelve_steps():
     fake = FakeSerial()
     ctrl = TurntableController(transport=fake)
 
-    visited = ctrl.step_sequence(12)
+    visited = list(ctrl.step_sequence(12))
 
     # 12 commands written, each a 30 deg rotation.
     rotate_cmds = [w for w in fake.written if w.startswith(b"R")]
@@ -139,6 +139,17 @@ def test_step_sequence_rejects_nonpositive():
     ctrl = TurntableController(transport=FakeSerial())
     with pytest.raises(ValueError):
         ctrl.step_sequence(0)
+
+
+def test_step_sequence_interleaves_moves_and_captures():
+    fake = FakeSerial()
+    ctrl = TurntableController(transport=fake)
+    captured = []
+    for index, angle in enumerate(ctrl.step_sequence(12), start=1):
+        assert len(fake.written) == index
+        assert ctrl.angle == pytest.approx(angle)
+        captured.append(ctrl.angle)
+    assert len(set(captured)) == 12
 
 
 def test_error_reply_raises():

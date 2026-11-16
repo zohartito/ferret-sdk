@@ -1,11 +1,18 @@
-# Ferret SDK — Completion Report
+# Ferret SDK — Historical Completion Report
+
+> Historical private-fixture session. Current public-clone validation is in
+> [logs/AUDIT-2026-11-15.md](logs/AUDIT-2026-11-15.md). The original 47/47
+> count and real-frame component counts below are not current results; the
+> 2026-11-15 baseline was 64 passed, 7 skipped. Native Open3D TSDF now uses
+> `UniformTSDFVolume`, verified offline on synthetic plane and turntable-box
+> depth (FER-10); real multi-view fusion quality remains unverified.
 
 Built the full Ferret 3D-scanning SDK + pipeline **offline**. The live scanner and
 its daemon were **never touched** (no socket to `127.0.0.1:10010`, no CrealityScan,
 no USB) — capture code is refactored from the proven probe and verified via parsing
 logic + decode round-trips, not by connecting to hardware.
 
-**Test status:** `47/47 pytest tests pass` (`.venv/bin/python -m pytest -q`), in ~2.4 s.
+**Historical test status:** `47/47 pytest tests pass` (`.venv/bin/python -m pytest -q`), in ~2.4 s.
 
 ---
 
@@ -27,7 +34,7 @@ All modules compose: `import ferret` brings up `calib`, `capture`, `reconstruct`
 
 ---
 
-## What is VERIFIED offline (with numbers)
+## Historical offline measurements (private inputs required)
 
 Ground truth: `probe/rpc_depth.npy` — a REAL metric-depth frame (uint16, 800×640,
 `depth_mm = value × 0.2`, 0/65535 invalid).
@@ -46,7 +53,14 @@ Ground truth: `probe/rpc_depth.npy` — a REAL metric-depth frame (uint16, 800×
 **reconstruct**
 - Real frame → 183 412-pt cloud written to `artifacts/real_recon.ply` (2.2 MB), reloads with matching count.
 - Synthetic turntable: 80×60×50 mm box rendered from 12 angles, fused via inverse-rotation poses → measured bbox **[81.15, 61.27, 51.03] mm** vs expected [80, 60, 50] (rel err 1.4% / 2.1% / 2.1%, within 10%). `synthetic_recon.obj` watertight (152 verts, 300 faces).
-- Open3D TSDF (`ScalableTSDFVolume`) path runs end-to-end on the real frame (147 179 verts) and synthetic data.
+- **FER-10 (2026-11-15):** Open3D 0.20.0's `ScalableTSDFVolume` integrates no
+  voxels on macOS arm64 (Open3D's own PrimeSense example included), so `fuse()`
+  silently used the NumPy fallback. Native fusion now uses a `UniformTSDFVolume`
+  sized to the posed depth points (at most 256 voxels per side), and
+  `mesh.metadata["fusion_backend"]` records which path ran. The strict test fuses
+  dense 600 mm plane depth natively (surface within one voxel) and the 12-view
+  turntable box; a second test checks the fallback is labelled. The historical
+  real-frame claim is not reproducible without its private input.
 
 **meshpipe**
 - `clean_mesh` on a messy synthetic mesh: faces **81 985 → 50 000** (exact decimation target), components **106 → 1**, `is_watertight=True`, `euler_number=2`.

@@ -2,16 +2,16 @@
 
 Chains the whole pipeline without ever touching the live scanner:
 
-    Stage A  REAL frame   probe/rpc_depth.npy
+    Stage A  REAL frame if available, otherwise a deterministic SYNTHETIC plane
              -> ferret.calib.intrinsics + depth_to_points
              -> ferret.reconstruct.save_ply
-             -> artifacts/e2e_real_pointcloud.ply
+             -> artifacts/offline-demo/e2e_{real|synthetic}_pointcloud.ply
 
     Stage B  SYNTHETIC turntable (box rendered from 12 angles)
              -> ferret.reconstruct.fuse  (numpy point-merge path)
-             -> raw mesh artifacts/e2e_synth_raw.obj
+             -> raw mesh artifacts/offline-demo/e2e_synth_raw.obj
              -> ferret.meshpipe.clean_mesh
-             -> final solid artifacts/e2e_synth_clean.obj
+             -> final solid artifacts/offline-demo/e2e_synth_clean.obj
 
 Run it:
     /path/to/ferret-sdk/.venv/bin/python examples/e2e_offline.py
@@ -33,9 +33,11 @@ if str(PROJECT) not in sys.path:  # allow `python examples/e2e_offline.py`
     sys.path.insert(0, str(PROJECT))
 
 from ferret import calib, meshpipe, reconstruct  # noqa: E402  (after sys.path)
+from ferret.capture import decode_y16_depth_mm
+from examples.synthetic_depth import make_raw_depth
 
 REAL_DEPTH = PROJECT / "probe" / "rpc_depth.npy"  # noqa: E402
-ARTIFACTS = PROJECT / "artifacts"
+ARTIFACTS = PROJECT / "artifacts" / "offline-demo"
 
 # Device constant: raw uint16 sensor value * 0.2 -> millimetres.
 DEPTH_VALUE_SCALE = 0.2
@@ -50,24 +52,31 @@ STANDOFF_MM = 600.0
 def _load_real_depth_mm() -> np.ndarray:
     """Load the captured scanner frame as float32 millimetres (0 = invalid)."""
     raw = np.load(REAL_DEPTH)
+    if raw.dtype != np.uint16:
+        return raw.astype(np.float32)  # current probe saves metric floats
     invalid = (raw == 0) | (raw == 65535)
     depth_mm = raw.astype(np.float32) * DEPTH_VALUE_SCALE
     depth_mm[invalid] = 0.0
     return depth_mm
 
 
-def stage_a_real_pointcloud() -> dict:
-    """Back-project the REAL captured frame to a metric point cloud + PLY."""
-    depth_mm = _load_real_depth_mm()
+def stage_a_pointcloud() -> dict:
+    """Project a supplied real frame or the clearly labelled synthetic substitute."""
+    real = REAL_DEPTH.is_file()
+    depth_mm = (_load_real_depth_mm() if real else
+                decode_y16_depth_mm(make_raw_depth().tobytes()))
     height, width = depth_mm.shape
 
     intr = calib.intrinsics(width, height)
     points = calib.depth_to_points(depth_mm, intr)
 
-    out = reconstruct.save_ply(ARTIFACTS / "e2e_real_pointcloud.ply", points)
+    kind = "real" if real else "synthetic"
+    out = reconstruct.save_ply(ARTIFACTS / f"e2e_{kind}_pointcloud.ply", points)
 
     z = points[:, 2]
     return {
+        "source": "REAL" if real else "SYNTHETIC",
+        "input": REAL_DEPTH.name if real else "deterministic sloped plane",
         "frame_shape": (height, width),
         "intrinsics": (round(intr.fx, 3), round(intr.fy, 3), intr.cx, intr.cy),
         "num_points": int(points.shape[0]),
@@ -160,10 +169,10 @@ def main() -> int:
     print("FERRET SDK  --  OFFLINE END-TO-END PASS")
     print("=" * 70)
 
-    a = stage_a_real_pointcloud()
-    print("\n[Stage A] REAL depth -> calib -> reconstruct -> PLY")
+    a = stage_a_pointcloud()
+    print(f"\n[Stage A] {a['source']} depth -> calib -> reconstruct -> PLY")
     print(f"  input frame      : {a['frame_shape'][0]}x{a['frame_shape'][1]}  "
-          f"({REAL_DEPTH.name})")
+          f"({a['input']})")
     print(f"  intrinsics fx,fy : {a['intrinsics'][0]}, {a['intrinsics'][1]} px"
           f"  (cx={a['intrinsics'][2]}, cy={a['intrinsics'][3]})")
     print(f"  points           : {a['num_points']:,}")
@@ -188,10 +197,10 @@ def main() -> int:
     # Hard pass/fail gates so this script is a usable smoke test.
     ok = True
     if a["num_points"] < 50_000:
-        print("\nFAIL: real point cloud too sparse")
+        print("\nFAIL: point cloud too sparse")
         ok = False
     if not (0.1 < a["z_max_m"] < 8.0):
-        print("\nFAIL: real depth z range implausible")
+        print("\nFAIL: depth z range implausible")
         ok = False
     if (b["rel_err_pct"] > 10.0).any():
         print("\nFAIL: synthetic bbox off by >10%")
@@ -207,4 +216,9 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output-dir", type=Path, default=ARTIFACTS)
+    ARTIFACTS = parser.parse_args().output_dir
     raise SystemExit(main())
