@@ -32,11 +32,14 @@ for the per-component breakdown, the exact numbers, and what still needs hardwar
 | `ferret_mcp.py` — MCP server (5 tools) | ✅ 7/7 tests; `depth_stats` + `reconstruct_pointcloud` + `clean_mesh` verified offline |
 | `hardware/turntable` — CAD + firmware + host | ✅ STL renders watertight (200×200×12 mm); host control 14/14 tests vs fake serial; firmware flash unverified (no board) |
 
-**Live-device caveat:** the capture RPC sequence is refactored verbatim from the
-proven probe but, per the hard safety rule, was **not** re-run against the daemon
-this session. `get_frame` returns raw Y14 *or* computed depth depending on the
-daemon's processing mode; the Y14 path is now coded + unit-tested, but whether the
-daemon actually emits Y14 (vs computed Y16) still needs one live raw capture to confirm.
+**Live-device caveat:** stream switching and decoding are tested with fake RPC
+transports, not reverified on hardware. `get_ir()` selects IR_RIGHT/Y8 and
+`get_depth_mm()` selects DEPTH/Y14. The daemon can return raw Y14 or computed Y16
+depending on its processing mode; use `FerretCamera(depth_format="Y16")` only
+when that mode is independently known. The default is strict Y14. Payload length
+cannot distinguish Y8 from Y16, and the RPC envelope has no verified format
+metadata. Unknown lengths and multiple image slots are rejected. Actual mode
+delivery and stale frames after a switch still require hardware verification.
 
 ## Quickstart
 
