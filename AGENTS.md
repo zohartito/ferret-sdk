@@ -21,6 +21,8 @@ Tapping a **Creality CR-Scan Ferret** 3D scanner from code (and ultimately an LL
   absent; outputs use ignored artifacts/offline-demo/ or --output-dir (FER-07).
 - watch_folder waits for two unchanged size/mtime polls and retries failures;
   only successful cleanup marks a file processed (FER-09).
+- MCP clean_mesh publishes exclusively into ARTIFACTS_DIR by default. Explicit
+  overwrite=True permits regular-file replacement; all ancestors reject symlinks (FER-08).
 
 ## Self-improving loop (close the loop)
 Run an agent until it verifies its own output, then commit:

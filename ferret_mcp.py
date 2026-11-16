@@ -110,13 +110,26 @@ def _output_name(out_name: str, depth_npy_path: str) -> str:
 
 
 def _open_directory(path: Path) -> int:
-    """Open a directory without accepting a symlink replacement."""
-    path.mkdir(parents=True, exist_ok=True)
-    info = os.lstat(path)
-    if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode):
-        raise RuntimeError("output directory must be a real directory")
-    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
-    return os.open(path, flags)
+    """Walk directory descriptors, refusing symlinks in every ancestor."""
+    path = Path(os.path.abspath(path))
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    directory_fd = os.open(path.anchor, flags)
+    try:
+        for component in path.parts[1:]:
+            try:
+                child = os.open(component, flags, dir_fd=directory_fd)
+            except FileNotFoundError:
+                try:
+                    os.mkdir(component, dir_fd=directory_fd)
+                except FileExistsError:
+                    pass  # a concurrent creator must still pass O_NOFOLLOW
+                child = os.open(component, flags, dir_fd=directory_fd)
+            os.close(directory_fd)
+            directory_fd = child
+        return directory_fd
+    except BaseException:
+        os.close(directory_fd)
+        raise
 
 
 def _open_artifacts_dir() -> int:
@@ -231,15 +244,30 @@ def _apply_mesh_resource_limits() -> None:
         ) from exc
 
 
-def _mesh_worker(in_path: str, out_path: str, results) -> None:
+def _mesh_worker(in_path: str, out_path: str, results, output_identity=None) -> None:
     """Run native mesh work in a process the caller can terminate."""
+    directory_fd = None
     try:
         _apply_mesh_resource_limits()
         from ferret import meshpipe
 
-        results.put(("ok", meshpipe.clean_mesh(in_path, out_path)))
+        destination = Path(out_path)
+        directory_fd = _open_directory(destination.parent)
+        info = os.stat(destination.name, dir_fd=directory_fd, follow_symlinks=False)
+        if (not stat.S_ISREG(info.st_mode)
+                or (info.st_dev, info.st_ino) != output_identity):
+            raise RuntimeError("mesh temporary output identity changed")
+        # Only this spawned worker changes cwd. fchdir pins native export to
+        # the opened directory even if an ancestor is renamed after validation;
+        # macOS fdescfs does not support /dev/fd/<directory>/<filename> traversal.
+        source = os.path.abspath(in_path)
+        os.fchdir(directory_fd)
+        results.put(("ok", meshpipe.clean_mesh(source, destination.name)))
     except BaseException as exc:
         results.put(("error", f"mesh cleanup failed safely: {type(exc).__name__}: {exc}"))
+    finally:
+        if directory_fd is not None:
+            os.close(directory_fd)
 
 
 def _stop_worker(worker) -> None:
@@ -312,7 +340,7 @@ def _new_mesh_tempfile(directory_fd: int, destination: Path) -> tuple[str, tuple
     raise RuntimeError("could not reserve safe temporary mesh output")
 
 
-def _bounded_clean_mesh(in_path: str, out_path: str) -> dict:
+def _bounded_clean_mesh(in_path: str, out_path: str, overwrite: bool = False) -> dict:
     source = Path(in_path)
     if not source.is_file():
         raise FileNotFoundError(f"mesh input not found: {source}")
@@ -320,6 +348,14 @@ def _bounded_clean_mesh(in_path: str, out_path: str) -> dict:
         raise ValueError(f"mesh input exceeds {MAX_MESH_INPUT_BYTES} byte MCP limit")
 
     destination = Path(out_path)
+    approved = Path(os.path.abspath(ARTIFACTS_DIR))
+    if destination.parent == Path("."):
+        destination = approved / destination
+    if ".." in destination.parts or "\\" in str(destination):
+        raise ValueError("mesh output must be directly inside the artifacts directory")
+    destination = Path(os.path.abspath(destination))
+    if destination.parent != approved:
+        raise ValueError("mesh output must be directly inside the artifacts directory")
     if destination.suffix.lower() not in MESH_OUTPUT_SUFFIXES:
         raise ValueError(
             f"mesh output must use one of: {', '.join(sorted(MESH_OUTPUT_SUFFIXES))}"
@@ -333,13 +369,22 @@ def _bounded_clean_mesh(in_path: str, out_path: str) -> dict:
     moved = False
     try:
         directory_fd = _open_directory(destination.parent)
+        try:
+            existing = os.stat(destination.name, dir_fd=directory_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            existing = None
+        if existing is not None:
+            if not overwrite:
+                raise FileExistsError(f"refusing to overwrite artifact: {destination.name}")
+            if not stat.S_ISREG(existing.st_mode):
+                raise ValueError("overwrite requires an existing regular file, not a symlink")
         temporary_name, identity = _new_mesh_tempfile(directory_fd, destination)
         temporary_path = destination.parent / temporary_name
         context = get_context("spawn")
         results = context.Queue(maxsize=1)
         worker = context.Process(
             target=_mesh_worker,
-            args=(str(source), str(temporary_path), results),
+            args=(str(source), str(temporary_path), results, identity),
         )
         worker.start()
         _wait_mesh_worker(worker)
@@ -361,13 +406,20 @@ def _bounded_clean_mesh(in_path: str, out_path: str) -> dict:
             or output.st_size > MESH_OUTPUT_BYTES
         ):
             raise RuntimeError("mesh cleanup did not produce a bounded owned output file")
-        os.replace(
-            temporary_name,
-            destination.name,
-            src_dir_fd=directory_fd,
-            dst_dir_fd=directory_fd,
-        )
+        if existing is None:
+            # Atomic exclusive publication: even a file created during native
+            # cleanup must not be replaced without separate authorization.
+            os.link(temporary_name, destination.name, src_dir_fd=directory_fd,
+                    dst_dir_fd=directory_fd, follow_symlinks=False)
+            _remove_owned_file(directory_fd, temporary_name, identity)
+        else:
+            current = os.stat(destination.name, dir_fd=directory_fd, follow_symlinks=False)
+            if (current.st_dev, current.st_ino) != (existing.st_dev, existing.st_ino):
+                raise RuntimeError("overwrite target changed during mesh cleanup")
+            os.replace(temporary_name, destination.name, src_dir_fd=directory_fd,
+                       dst_dir_fd=directory_fd)
         moved = True
+        result["out_path"] = str(destination)
         return result
     finally:
         if worker is not None and worker.is_alive():
@@ -457,22 +509,24 @@ def reconstruct_pointcloud(depth_npy_path: str, out_name: str = "") -> dict:
 
 
 @mcp.tool()
-def clean_mesh(in_path: str, out_path: str) -> dict:
+def clean_mesh(in_path: str, out_path: str, overwrite: bool = False) -> dict:
     """Clean a mesh: largest component, fill holes, recenter, Z-up, decimate.
 
     Delegates to ferret.meshpipe.clean_mesh.
 
     Args:
         in_path: Path to the input mesh (e.g. .obj / .ply / .stl).
-        out_path: Path to write the cleaned mesh.
+        out_path: Filename or path directly inside the server's artifacts directory.
+        overwrite: Explicit authorization to replace an existing regular mesh
+            at that path. Defaults to False; symlinks are always refused.
 
     Returns:
         dict with the output path and whether the file was produced.
     """
-    _bounded_clean_mesh(in_path, out_path)
+    result = _bounded_clean_mesh(in_path, out_path, overwrite=overwrite)
     return {
-        "out_path": str(out_path),
-        "written": Path(out_path).is_file(),
+        "out_path": result["out_path"],
+        "written": Path(result["out_path"]).is_file(),
     }
 
 

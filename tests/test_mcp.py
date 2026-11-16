@@ -39,6 +39,73 @@ EXPECTED_TOOLS = {
 }
 
 
+@pytest.fixture(autouse=True)
+def approved_output_directory(tmp_path, monkeypatch):
+    monkeypatch.setattr(ferret_mcp, "ARTIFACTS_DIR", tmp_path)
+
+
+def test_clean_mesh_refuses_existing_output(tmp_path):
+    source, output = tmp_path / "source.obj", tmp_path / "keep.obj"
+    trimesh.creation.box().export(source)
+    output.write_bytes(b"unrelated existing mesh")
+    with pytest.raises(FileExistsError, match="overwrite"):
+        ferret_mcp.clean_mesh(str(source), str(output))
+    assert output.read_bytes() == b"unrelated existing mesh"
+
+
+def test_clean_mesh_confines_output(tmp_path, monkeypatch):
+    source, output = tmp_path / "source.obj", tmp_path / "outside.obj"
+    trimesh.creation.box().export(source)
+    monkeypatch.setattr(ferret_mcp, "ARTIFACTS_DIR", tmp_path / "approved")
+    with pytest.raises(ValueError, match="artifacts directory"):
+        ferret_mcp.clean_mesh(str(source), str(output))
+    assert not output.exists()
+
+
+def test_clean_mesh_rejects_symlink_ancestor(tmp_path, monkeypatch):
+    source = tmp_path / "source.obj"
+    trimesh.creation.box().export(source)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (tmp_path / "alias").symlink_to(outside, target_is_directory=True)
+    approved = tmp_path / "alias" / "artifacts"
+    monkeypatch.setattr(ferret_mcp, "ARTIFACTS_DIR", approved)
+    with pytest.raises(OSError):
+        ferret_mcp.clean_mesh(str(source), str(approved / "escaped.obj"))
+    assert not (outside / "artifacts" / "escaped.obj").exists()
+
+
+def test_clean_mesh_explicit_overwrite_and_symlink_refusal(tmp_path):
+    source, output = tmp_path / "source.obj", tmp_path / "replace.obj"
+    trimesh.creation.box().export(source)
+    output.write_bytes(b"authorized old mesh")
+    result = ferret_mcp.clean_mesh(str(source), output.name, overwrite=True)
+    assert result["written"] and Path(result["out_path"]) == output
+    assert len(trimesh.load(output, force="mesh").faces) == 12
+    link = tmp_path / "link.obj"
+    link.symlink_to(output)
+    original = output.read_bytes()
+    with pytest.raises(ValueError, match="symlink"):
+        ferret_mcp.clean_mesh(str(source), link.name, overwrite=True)
+    assert output.read_bytes() == original
+
+
+def test_clean_mesh_exclusive_publication_race(tmp_path, monkeypatch):
+    source, output = tmp_path / "source.obj", tmp_path / "raced.obj"
+    trimesh.creation.box().export(source)
+    original_link = os.link
+
+    def competing_publication(*args, **kwargs):
+        output.write_bytes(b"concurrent unrelated file")
+        return original_link(*args, **kwargs)
+
+    monkeypatch.setattr(ferret_mcp.os, "link", competing_publication)
+    with pytest.raises(FileExistsError):
+        ferret_mcp.clean_mesh(str(source), str(output))
+    assert output.read_bytes() == b"concurrent unrelated file"
+    assert not list(tmp_path.glob(".raced.*.obj"))
+
+
 def _registered_tool_names() -> set[str]:
     return {tool.name for tool in ferret_mcp.mcp._tool_manager.list_tools()}
 

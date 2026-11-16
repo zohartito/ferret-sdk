@@ -86,6 +86,13 @@ The probe saves float32 millimetres (zero = invalid), plus the original raw
 bytes. Its default Y14 mode uses the package disparity decoder; it rejects
 other payload sizes instead of guessing their format.
 
+MCP `clean_mesh` writes only directly inside the server's `artifacts/` directory.
+Pass a filename or a path there. Existing files are refused by default; replacing
+a regular file requires `overwrite=True`. Symlink destinations and ancestors are
+refused, including with overwrite authorization. Native cleanup runs in a worker
+with CPU/file/time bounds; macOS memory supervision uses a 1 GiB RSS threshold
+sampled every 50 ms (it is not an allocation-time memory ceiling).
+
 ## Layout
 ```
 ferret/                 # the SDK package (built + tested offline)
