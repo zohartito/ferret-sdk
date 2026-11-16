@@ -17,6 +17,8 @@ Tapping a **Creality CR-Scan Ferret** 3D scanner from code (and ultimately an LL
   yields for capture. Tests use fake serial transports only (FER-05).
 - Mesh recovery may close only holes introduced by decimating a previously
   watertight mesh; original openings obey max_hole_edges, including zero (FER-06).
+- Fresh-clone E2E uses examples/synthetic_depth.py when private captures are
+  absent; outputs use ignored artifacts/offline-demo/ or --output-dir (FER-07).
 
 ## Self-improving loop (close the loop)
 Run an agent until it verifies its own output, then commit:

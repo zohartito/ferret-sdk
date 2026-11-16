@@ -64,7 +64,15 @@ and `pip freeze`, then rerun the offline suite and eval gate.
 .venv/bin/pytest -q                                        # 47 offline tests
 .venv/bin/python examples/render_mesh.py \
   artifacts/motorcycle_rhino_ready.obj                     # render committed mesh
+.venv/bin/python examples/e2e_offline.py                   # synthetic fresh-clone E2E
 ```
+
+The public clone does **not** include `probe/rpc_depth.npy`, `rpc_raw_frame.bin`,
+or the historical `.npy` outputs (they are git-ignored). Seven tests requiring
+those real captures remain explicitly skipped. The E2E example uses a deterministic
+synthetic sloped plane when the real frame is absent and labels that substitution;
+it verifies software reproducibility, not sensor accuracy. Outputs go to the
+ignored `artifacts/offline-demo/`, or a chosen `--output-dir`.
 
 ### Live capture (needs the hardware)
 ```bash
@@ -90,7 +98,7 @@ ferret_mcp.py           # MCP server (MCPServer): depth_stats, reconstruct_point
 hardware/turntable/     # turntable.scad + firmware/turntable.ino + turntable_control.py + BOM
 tests/                  # pytest suite (47 tests, all offline)
 artifacts/              # inspectable outputs: PLY / OBJ / STL / PNG
-probe/                  # original device-cracking scripts + the REAL captured rpc_depth.npy
+probe/                  # device investigation scripts; real raw/depth fixtures are not shipped
   ferret_rpc_depth.py   # main: pull depth via daemon RPC (auto-discovers device id)
   rpc_client.py         # minimal msgpack-RPC (rpclib) client for the daemon
 ARCHITECTURE.md         # system design + platform decision
