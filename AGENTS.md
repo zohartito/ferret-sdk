@@ -21,8 +21,6 @@ Tapping a **Creality CR-Scan Ferret** 3D scanner from code (and ultimately an LL
   absent; outputs use ignored artifacts/offline-demo/ or --output-dir (FER-07).
 - watch_folder waits for two unchanged size/mtime polls and retries failures;
   only successful cleanup marks a file processed (FER-09).
-- TSDF acceptance uses dense synthetic plane depth and forbids NumPy fallback;
-  sparse box dimensional tests intentionally use NumPy fusion (FER-10).
 
 ## Self-improving loop (close the loop)
 Run an agent until it verifies its own output, then commit:
