@@ -1,4 +1,8 @@
-# E2E Verification Log — ferret-sdk
+# Historical E2E Verification Log — ferret-sdk
+
+> Original private-fixture run; counts below are historical. See
+> [AUDIT-2026-11-15.md](AUDIT-2026-11-15.md) for versioned public-clone validation,
+> skip reasons and backend limitations.
 
 - **Date:** 2026-06-15
 - **Env:** `.venv` (Python 3.11.15) — open3d 0.19, pymeshlab, trimesh, numpy 2.4, mcp 1.27

@@ -1,11 +1,16 @@
-# Ferret SDK — Completion Report
+# Ferret SDK — Historical Completion Report
+
+> Historical private-fixture session. Current public-clone validation is in
+> [logs/AUDIT-2026-11-15.md](logs/AUDIT-2026-11-15.md). The original 47/47
+> count and real-frame component counts below are not current results; the
+> 2026-11-15 baseline was 64 passed, 7 skipped. Native TSDF remains blocked.
 
 Built the full Ferret 3D-scanning SDK + pipeline **offline**. The live scanner and
 its daemon were **never touched** (no socket to `127.0.0.1:10010`, no CrealityScan,
 no USB) — capture code is refactored from the proven probe and verified via parsing
 logic + decode round-trips, not by connecting to hardware.
 
-**Test status:** `47/47 pytest tests pass` (`.venv/bin/python -m pytest -q`), in ~2.4 s.
+**Historical test status:** `47/47 pytest tests pass` (`.venv/bin/python -m pytest -q`), in ~2.4 s.
 
 ---
 
@@ -27,7 +32,7 @@ All modules compose: `import ferret` brings up `calib`, `capture`, `reconstruct`
 
 ---
 
-## What is VERIFIED offline (with numbers)
+## Historical offline measurements (private inputs required)
 
 Ground truth: `probe/rpc_depth.npy` — a REAL metric-depth frame (uint16, 800×640,
 `depth_mm = value × 0.2`, 0/65535 invalid).
