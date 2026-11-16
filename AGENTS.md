@@ -6,6 +6,8 @@ Tapping a **Creality CR-Scan Ferret** 3D scanner from code (and ultimately an LL
 ## How to verify a change
 - Install: Python 3.12, `python -m pip install -r requirements-lock.txt` (FER-01/13).
 - Tests: `pytest -q`
+- Test exports belong in pytest tmp_path; never overwrite tracked artifacts.
+  The suite-hygiene regression checks artifact hashes around mesh tests (FER-N1).
 - Lint:  `(none detected)`
 - MCP mesh acceptance must produce a mesh; macOS uses parent RSS monitoring
   (50 ms sampling, 1 GiB termination threshold), CPU/file limits and a timeout (FER-04).

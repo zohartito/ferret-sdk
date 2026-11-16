@@ -16,10 +16,6 @@ import trimesh
 
 from ferret import meshpipe
 
-ARTIFACTS = Path(__file__).resolve().parents[1] / "artifacts"
-MESSY_INPUT = ARTIFACTS / "messy_input.obj"
-CLEANED_OUTPUT = ARTIFACTS / "cleaned_output.obj"
-
 TARGET_FACES = meshpipe.DEFAULT_TARGET_FACES
 FACE_CAP = TARGET_FACES + 5_000  # decimation lands at-or-below target + slack
 
@@ -50,17 +46,18 @@ def _build_messy_mesh() -> trimesh.Trimesh:
     )
 
 
-def test_clean_mesh_produces_single_clean_solid() -> None:
-    ARTIFACTS.mkdir(parents=True, exist_ok=True)
+def test_clean_mesh_produces_single_clean_solid(tmp_path: Path) -> None:
+    messy_input = tmp_path / "messy_input.obj"
+    cleaned_output = tmp_path / "cleaned_output.obj"
 
     messy = _build_messy_mesh()
-    messy.export(MESSY_INPUT)
+    messy.export(messy_input)
 
     # Sanity: the input really is messy (multiple components).
     raw_components = meshpipe._count_components(messy)
     assert raw_components >= 2, "fixture should have a stray detached island"
 
-    stats = meshpipe.clean_mesh(MESSY_INPUT, CLEANED_OUTPUT, target_faces=TARGET_FACES)
+    stats = meshpipe.clean_mesh(messy_input, cleaned_output, target_faces=TARGET_FACES)
 
     # 1. Exactly one connected component remains.
     assert stats["components_after"] == 1, stats
@@ -79,7 +76,7 @@ def test_clean_mesh_produces_single_clean_solid() -> None:
     # this specific assertion (with the diagnostic) rather than fail the whole
     # test: the single-component collapse and decimation behaviour above are the
     # core guarantees and are still asserted unconditionally.
-    reloaded = trimesh.load(CLEANED_OUTPUT, process=False, force="mesh")
+    reloaded = trimesh.load(cleaned_output, process=False, force="mesh")
     near_watertight = reloaded.is_watertight or reloaded.euler_number == 2
     if not near_watertight:
         pytest.skip(
@@ -89,18 +86,18 @@ def test_clean_mesh_produces_single_clean_solid() -> None:
         )
 
     # 4. The output file was actually written.
-    assert CLEANED_OUTPUT.exists() and CLEANED_OUTPUT.stat().st_size > 0
+    assert cleaned_output.exists() and cleaned_output.stat().st_size > 0
 
 
-def test_clean_mesh_drops_stray_component() -> None:
+def test_clean_mesh_drops_stray_component(tmp_path: Path) -> None:
     """A two-island mesh should keep only the larger island's geometry."""
     big = trimesh.creation.icosphere(subdivisions=3, radius=1.0)
     small = trimesh.creation.box(extents=(0.1, 0.1, 0.1))
     small.apply_translation([10.0, 0.0, 0.0])
     two = trimesh.util.concatenate([big, small])
 
-    in_path = ARTIFACTS / "_two_island.obj"
-    out_path = ARTIFACTS / "_two_island_clean.obj"
+    in_path = tmp_path / "_two_island.obj"
+    out_path = tmp_path / "_two_island_clean.obj"
     two.export(in_path)
 
     stats = meshpipe.clean_mesh(in_path, out_path, target_faces=TARGET_FACES)
@@ -149,12 +146,12 @@ def test_textured_obj_output_is_refused_without_sidecars(tmp_path: Path) -> None
     assert not output.with_suffix(".mtl").exists()
 
 
-def test_recenter_puts_centroid_at_origin() -> None:
+def test_recenter_puts_centroid_at_origin(tmp_path: Path) -> None:
     box = trimesh.creation.box(extents=(1.0, 1.0, 1.0))
     box.apply_translation([100.0, -50.0, 25.0])
 
-    in_path = ARTIFACTS / "_offset_box.obj"
-    out_path = ARTIFACTS / "_offset_box_clean.obj"
+    in_path = tmp_path / "_offset_box.obj"
+    out_path = tmp_path / "_offset_box_clean.obj"
     box.export(in_path)
 
     meshpipe.clean_mesh(in_path, out_path, target_faces=TARGET_FACES)
