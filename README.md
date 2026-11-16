@@ -16,8 +16,9 @@ fighting the macOS USB stack.
 - We pull real frames this way: IR (Y8), raw disparity (Y14), and the daemon's **computed metric depth** (16-bit, mm via scale `0.2`).
 
 ## Status
-The offline audit baseline at commit 94dcd67 was **64 passed, 7 skipped** on
-Python 3.12.16/macOS arm64 (2026-11-15). Current validation and backend limits
+The offline suite at code revision 3a93ad9 is **92 passed, 7 skipped** on
+Python 3.12.16/macOS arm64 (2026-11-15), up from baseline 64 passed/7 skipped.
+Versioned validation and backend limits
 are recorded in [logs/AUDIT-2026-11-15.md](logs/AUDIT-2026-11-15.md).
 The older [COMPLETION-REPORT.md](COMPLETION-REPORT.md) is a historical report,
 not evidence that every backend or real-capture path passes in a public clone.
