@@ -337,13 +337,15 @@ def watch_folder(
 
     Runs forever by default. ``max_iterations`` bounds the number of polling
     cycles, which keeps the daemon unit-testable without threads. Returns the
-    list of stats dicts for every mesh processed.
+    list of stats dicts for every mesh processed. Files must have unchanged size
+    and modification time across two polls; failed attempts are retried.
     """
     in_dir = Path(in_dir)
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     processed: set[str] = set()
+    observed: dict[str, tuple[int, int]] = {}
     results: list[dict] = []
     iterations = 0
 
@@ -355,12 +357,17 @@ def watch_folder(
                 continue
             out_path = out_dir / f"{mesh_path.stem}_clean.obj"
             try:
+                info = mesh_path.stat()
+                signature = (info.st_size, info.st_mtime_ns)
+                previous = observed.get(mesh_path.name)
+                observed[mesh_path.name] = signature
+                if previous != signature:
+                    continue
                 stats = clean_mesh(mesh_path, out_path, target_faces=target_faces)
                 results.append(stats)
-            except (ValueError, OSError) as error:
-                print(f"[meshpipe] skipped {mesh_path.name}: {error}")
-            finally:
                 processed.add(mesh_path.name)
+            except (ValueError, OSError) as error:
+                print(f"[meshpipe] will retry {mesh_path.name}: {error}")
 
         iterations += 1
         if max_iterations is None or iterations < max_iterations:

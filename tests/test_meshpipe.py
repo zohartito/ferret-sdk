@@ -166,7 +166,7 @@ def test_recenter_puts_centroid_at_origin() -> None:
 
 
 def test_watch_folder_processes_new_meshes(tmp_path: Path) -> None:
-    """One bounded poll cycle should clean every supported mesh in the inbox."""
+    """Two stable poll cycles should clean every supported mesh in the inbox."""
     in_dir = tmp_path / "in"
     out_dir = tmp_path / "out"
     in_dir.mkdir()
@@ -177,7 +177,7 @@ def test_watch_folder_processes_new_meshes(tmp_path: Path) -> None:
     (in_dir / "notes.txt").write_text("ignore me")  # non-mesh file is skipped
 
     results = meshpipe.watch_folder(
-        in_dir, out_dir, poll_interval=0.0, max_iterations=1
+        in_dir, out_dir, poll_interval=0.0, max_iterations=2
     )
 
     assert len(results) == 2
@@ -233,3 +233,41 @@ def test_trimesh_three_edge_budget_preserves_quad_hole():
     faces_before = len(mesh.faces)
     result = meshpipe._fill_holes_trimesh(mesh, 3)
     assert len(result.faces) == faces_before and not result.is_watertight
+
+
+def test_watch_folder_waits_for_completed_export(tmp_path, monkeypatch):
+    inbox, outbox = tmp_path / "in", tmp_path / "out"
+    inbox.mkdir()
+    source = inbox / "scan.obj"
+    source.write_text("v 0 0 0\nv 1 0 0\nv 0 1 0\n")
+    complete = False
+
+    def finish_export(_interval):
+        nonlocal complete
+        if not complete:
+            trimesh.creation.box().export(source)
+            complete = True
+
+    monkeypatch.setattr(meshpipe.time, "sleep", finish_export)
+    results = meshpipe.watch_folder(inbox, outbox, max_iterations=3)
+    assert len(results) == 1
+    assert (outbox / "scan_clean.obj").is_file()
+
+
+def test_watch_folder_retries_transient_failure(tmp_path, monkeypatch):
+    inbox = tmp_path / "in"
+    inbox.mkdir()
+    trimesh.creation.box().export(inbox / "scan.obj")
+    original = meshpipe.clean_mesh
+    attempts = []
+
+    def fail_once(*args, **kwargs):
+        attempts.append(args)
+        if len(attempts) == 1:
+            raise OSError("exporter still holds the file")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(meshpipe, "clean_mesh", fail_once)
+    results = meshpipe.watch_folder(inbox, tmp_path / "out", poll_interval=0,
+                                   max_iterations=3)
+    assert len(results) == 1 and len(attempts) == 2

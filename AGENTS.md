@@ -19,6 +19,8 @@ Tapping a **Creality CR-Scan Ferret** 3D scanner from code (and ultimately an LL
   watertight mesh; original openings obey max_hole_edges, including zero (FER-06).
 - Fresh-clone E2E uses examples/synthetic_depth.py when private captures are
   absent; outputs use ignored artifacts/offline-demo/ or --output-dir (FER-07).
+- watch_folder waits for two unchanged size/mtime polls and retries failures;
+  only successful cleanup marks a file processed (FER-09).
 
 ## Self-improving loop (close the loop)
 Run an agent until it verifies its own output, then commit:
