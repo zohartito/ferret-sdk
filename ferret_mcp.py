@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import os
 import stat
+import sys
+import time
 from multiprocessing import get_context
 from pathlib import Path
 from queue import Empty
@@ -42,6 +44,7 @@ MAX_MESH_INPUT_BYTES = 64 * 1024 * 1024
 MESH_TIMEOUT_SECONDS = 45
 MESH_SHUTDOWN_GRACE_SECONDS = 2
 MESH_ADDRESS_SPACE_BYTES = 1_024 * 1024 * 1024
+MESH_MEMORY_POLL_SECONDS = 0.05
 MESH_OUTPUT_BYTES = 64 * 1024 * 1024
 MESH_OUTPUT_SUFFIXES = {".obj", ".ply", ".stl", ".off", ".glb"}
 
@@ -206,11 +209,15 @@ def _apply_mesh_resource_limits() -> None:
     try:
         import resource
 
-        for limit, requested in (
+        limits = [
             (resource.RLIMIT_CPU, MESH_TIMEOUT_SECONDS),
-            (resource.RLIMIT_AS, MESH_ADDRESS_SPACE_BYTES),
             (resource.RLIMIT_FSIZE, MESH_OUTPUT_BYTES),
-        ):
+        ]
+        # macOS does not support lowering RLIMIT_AS. The parent monitors RSS
+        # there; CPU and file-size limits remain mandatory in the worker.
+        if sys.platform != "darwin":
+            limits.append((resource.RLIMIT_AS, MESH_ADDRESS_SPACE_BYTES))
+        for limit, requested in limits:
             _soft, hard = resource.getrlimit(limit)
             effective = requested if hard == resource.RLIM_INFINITY else min(requested, hard)
             if effective <= 0:
@@ -244,6 +251,37 @@ def _stop_worker(worker) -> None:
         worker.join(MESH_SHUTDOWN_GRACE_SECONDS)
     if worker.is_alive():
         raise RuntimeError("mesh cleanup worker could not be terminated safely")
+
+
+def _wait_mesh_worker(worker) -> None:
+    """Wait within the wall-clock budget; supervise resident memory on macOS.
+
+    RSS is sampled every 50 ms, so this is a termination threshold, not an
+    allocation-time ceiling. Monitoring errors fail closed in the caller.
+    """
+    if sys.platform != "darwin":
+        worker.join(MESH_TIMEOUT_SECONDS)
+        return
+    import psutil
+
+    deadline = time.monotonic() + MESH_TIMEOUT_SECONDS
+    while worker.is_alive():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        worker.join(min(MESH_MEMORY_POLL_SECONDS, remaining))
+        if not worker.is_alive():
+            return
+        try:
+            resident = psutil.Process(worker.pid).memory_info().rss
+        except psutil.NoSuchProcess:
+            worker.join(MESH_SHUTDOWN_GRACE_SECONDS)
+            if worker.is_alive():
+                raise RuntimeError("mesh memory monitor lost the running worker")
+            return
+        if resident > MESH_ADDRESS_SPACE_BYTES:
+            _stop_worker(worker)
+            raise RuntimeError("mesh cleanup exceeded MCP resident memory limit")
 
 
 def _new_mesh_tempfile(directory_fd: int, destination: Path) -> tuple[str, tuple[int, int]]:
@@ -304,7 +342,7 @@ def _bounded_clean_mesh(in_path: str, out_path: str) -> dict:
             args=(str(source), str(temporary_path), results),
         )
         worker.start()
-        worker.join(MESH_TIMEOUT_SECONDS)
+        _wait_mesh_worker(worker)
         if worker.is_alive():
             _stop_worker(worker)
             raise TimeoutError("mesh cleanup exceeded MCP time limit and was terminated")

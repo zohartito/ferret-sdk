@@ -7,6 +7,8 @@ Tapping a **Creality CR-Scan Ferret** 3D scanner from code (and ultimately an LL
 - Install: Python 3.12, `python -m pip install -r requirements-lock.txt` (FER-01/13).
 - Tests: `pytest -q`
 - Lint:  `(none detected)`
+- MCP mesh acceptance must produce a mesh; macOS uses parent RSS monitoring
+  (50 ms sampling, 1 GiB termination threshold), CPU/file limits and a timeout (FER-04).
 
 ## Self-improving loop (close the loop)
 Run an agent until it verifies its own output, then commit:

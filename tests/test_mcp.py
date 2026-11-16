@@ -271,16 +271,10 @@ def test_clean_mesh_runs_in_bounded_worker(tmp_path):
     output = tmp_path / "clean.obj"
     trimesh.creation.icosphere(subdivisions=1).export(source)
 
-    try:
-        result = ferret_mcp.clean_mesh(str(source), str(output))
-    except RuntimeError as exc:
-        # This macOS interpreter cannot apply RLIMIT_AS.  The MCP endpoint must
-        # reject rather than silently run native mesh processing without limits.
-        assert "required resource limits failed" in str(exc)
-        assert not output.exists()
-    else:
-        assert result["written"] is True
-        assert output.is_file()
+    result = ferret_mcp.clean_mesh(str(source), str(output))
+    assert result["written"] is True
+    assert output.is_file()
+    assert len(trimesh.load(output, force="mesh").faces) > 0
 
 
 def test_mesh_worker_refuses_when_resource_limits_cannot_be_applied(monkeypatch):
@@ -427,11 +421,38 @@ def test_timed_out_mesh_removes_owned_partial_tempfile(tmp_path, monkeypatch):
 
     context = Context()
     monkeypatch.setattr(ferret_mcp, "get_context", lambda _method: context)
+    monkeypatch.setattr(ferret_mcp, "_wait_mesh_worker", lambda worker: None)
     with pytest.raises(TimeoutError, match="exceeded MCP time limit"):
         ferret_mcp._bounded_clean_mesh(str(source), str(output))
     assert context.worker.terminated is True
     assert not output.exists()
     assert not list(tmp_path.glob(".clean.*.obj"))
+
+
+def test_macos_mesh_monitor_terminates_over_memory_budget(monkeypatch):
+    import psutil
+
+    class Worker:
+        pid = 123
+        alive = True
+
+        def is_alive(self):
+            return self.alive
+
+        def join(self, timeout):
+            pass
+
+        def terminate(self):
+            self.alive = False
+
+    monkeypatch.setattr(ferret_mcp.sys, "platform", "darwin")
+    monkeypatch.setattr(psutil, "Process", lambda pid: SimpleNamespace(
+        memory_info=lambda: SimpleNamespace(rss=ferret_mcp.MESH_ADDRESS_SPACE_BYTES + 1)
+    ))
+    worker = Worker()
+    with pytest.raises(RuntimeError, match="resident memory limit"):
+        ferret_mcp._wait_mesh_worker(worker)
+    assert not worker.is_alive()
 
 
 def test_oversize_mesh_output_removes_owned_partial_tempfile(tmp_path, monkeypatch):
