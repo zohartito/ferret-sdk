@@ -71,7 +71,10 @@ multimeter (continuity = same coil). Motor PSU 12 V -> VM/GND on the driver.
 Host -> ESP32, newline-terminated ASCII:
 
 - `R<deg>` rotate relative by `<deg>` degrees (e.g. `R15`, `R-90`)
-- `H` home to index (if sensor fitted)
-- `?` query status
+- `H` reset the logical angle to zero (no physical motion)
+- `P` query the logical angle; reply is `OK <angle>`
+
+Physical index-sensor homing is not implemented, even if a sensor is fitted.
+`?` is unsupported and returns `ERR unknown command`.
 
 ESP32 replies `OK` when a move completes (consumed by `turntable_control.py`).
