@@ -14,6 +14,7 @@ on:
       - "tests/eval_gate.py"
       - ".github/workflows/eval-gate.yml"
       - "requirements.txt"
+      - "requirements-lock.txt"
   workflow_dispatch:
 
 concurrency:
@@ -36,7 +37,7 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-lock.txt
       - name: Run golden-baseline eval gate
         run: python tests/eval_gate.py --ci | tee eval-gate-result.json
       - name: Upload eval result

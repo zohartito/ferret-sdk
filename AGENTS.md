@@ -4,6 +4,7 @@
 Tapping a **Creality CR-Scan Ferret** 3D scanner from code (and ultimately an LLM)
 
 ## How to verify a change
+- Install: Python 3.12, `python -m pip install -r requirements-lock.txt` (FER-01/13).
 - Tests: `pytest -q`
 - Lint:  `(none detected)`
 

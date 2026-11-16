@@ -40,14 +40,21 @@ daemon actually emits Y14 (vs computed Y16) still needs one live raw capture to 
 
 ## Quickstart
 
-**Requires Python 3.11.** `open3d` has no wheel for 3.12 / 3.13 / 3.14, so
-`pip install -r requirements.txt` fails on a newer default `python3`. Create the
-venv with 3.11 explicitly:
+**Use Python 3.12.** The locked offline environment was verified on macOS
+arm64 with Python 3.12.16 and Open3D 0.20.0 (which has a Python 3.12 wheel).
+NumPy 2.5 requires Python >=3.12; Python 3.11 cannot install these dependencies.
+CI also uses Python 3.12. Other Python/platform combinations are not verified.
 
 ```bash
-python3.11 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -r requirements-lock.txt
+.venv/bin/python -m pip check
 ```
+
+`requirements.txt` records direct dependency ranges; `requirements-lock.txt`
+pins the complete tested environment, including transitive dependencies. Refresh
+it deliberately in a clean Python 3.12 environment with `pip install -r requirements.txt`
+and `pip freeze`, then rerun the offline suite and eval gate.
 
 ### Offline demo (works on a fresh clone — no scanner, no daemon)
 ```bash
