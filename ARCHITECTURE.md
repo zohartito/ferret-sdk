@@ -131,8 +131,10 @@ required or verified host configuration for this SDK.
 Live sensor delivery, daemon mode, stream switching and metric accuracy still
 require hardware verification. The offline suite checks fake-RPC control flow
 and deterministic decoding, and does not establish those live properties.
-Mesh cleanup and NumPy reconstruction also work offline; native TSDF verification
-is blocked as recorded in [logs/AUDIT-2026-11-15.md](logs/AUDIT-2026-11-15.md).
+Mesh cleanup, NumPy reconstruction and native Open3D TSDF work offline. Native
+TSDF uses `UniformTSDFVolume`, verified on synthetic plane and turntable-box depth
+(FER-10); real multi-view fusion quality remains unverified. See
+[logs/AUDIT-2026-11-15.md](logs/AUDIT-2026-11-15.md).
 
 ---
 

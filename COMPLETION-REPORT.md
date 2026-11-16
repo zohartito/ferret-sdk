@@ -3,7 +3,9 @@
 > Historical private-fixture session. Current public-clone validation is in
 > [logs/AUDIT-2026-11-15.md](logs/AUDIT-2026-11-15.md). The original 47/47
 > count and real-frame component counts below are not current results; the
-> 2026-11-15 baseline was 64 passed, 7 skipped. Native TSDF remains blocked.
+> 2026-11-15 baseline was 64 passed, 7 skipped. Native Open3D TSDF now uses
+> `UniformTSDFVolume`, verified offline on synthetic plane and turntable-box
+> depth (FER-10); real multi-view fusion quality remains unverified.
 
 Built the full Ferret 3D-scanning SDK + pipeline **offline**. The live scanner and
 its daemon were **never touched** (no socket to `127.0.0.1:10010`, no CrealityScan,
