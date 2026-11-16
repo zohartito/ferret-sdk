@@ -156,18 +156,36 @@ def test_synthetic_turntable_fuse_recovers_dimensions():
 
 
 @pytest.mark.skipif(not reconstruct._HAS_OPEN3D, reason="Open3D not installed")
-def test_open3d_tsdf_path_runs():
+def test_open3d_tsdf_path_runs(monkeypatch):
     """The Open3D TSDF fusion path runs end-to-end and yields a real mesh.
 
-    We do not assert tight bbox recovery here: TSDF needs dense surface depth,
-    and the synthetic point samples make it over-carve. This test guards that
-    the high-quality path is wired correctly (intrinsics, extrinsics, integrate,
-    extract) and returns a non-empty trimesh.
+    Use dense depth of a plane at 600 mm. The point-sampled turntable fixture
+    over-carves to an empty TSDF and is appropriate only for the numpy test.
+    Backend identity and the fallback guard ensure native TSDF actually ran.
     """
-    frames, poses, _ = _make_turntable(np.array([80.0, 60.0, 50.0]), n_views=12)
+    backend_meshes = []
+    strict_backend = reconstruct._fuse_open3d
+
+    def traced_backend(*args, **kwargs):
+        mesh = strict_backend(*args, **kwargs)
+        backend_meshes.append(mesh)
+        return mesh
+
+    def fallback_forbidden(*args, **kwargs):
+        raise AssertionError("TSDF acceptance must not use the numpy fallback")
+
+    monkeypatch.setattr(reconstruct, "_fuse_open3d", traced_backend)
+    monkeypatch.setattr(reconstruct, "_mesh_from_points", fallback_forbidden)
+    frames = [np.full((120, 160), 600.0, dtype=np.float32) for _ in range(3)]
+    poses = [np.eye(4) for _ in frames]
+    for pose, shift in zip(poses, [-0.02, 0.0, 0.02]):
+        pose[0, 3] = shift
     mesh = reconstruct.fuse(frames, poses, voxel_mm=4.0, prefer_tsdf=True)
+    assert len(backend_meshes) == 1 and mesh is backend_meshes[0]
     assert isinstance(mesh, trimesh.Trimesh)
     assert len(mesh.vertices) > 0 and len(mesh.faces) > 0
+    assert np.allclose(mesh.vertices[:, 2], 0.6, atol=0.004)
+    assert np.ptp(mesh.vertices[:, 0]) > 0.1 and np.ptp(mesh.vertices[:, 1]) > 0.1
 
 
 def test_depth_to_pointcloud_drops_invalid():

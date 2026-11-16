@@ -46,7 +46,10 @@ Ground truth: `probe/rpc_depth.npy` — a REAL metric-depth frame (uint16, 800×
 **reconstruct**
 - Real frame → 183 412-pt cloud written to `artifacts/real_recon.ply` (2.2 MB), reloads with matching count.
 - Synthetic turntable: 80×60×50 mm box rendered from 12 angles, fused via inverse-rotation poses → measured bbox **[81.15, 61.27, 51.03] mm** vs expected [80, 60, 50] (rel err 1.4% / 2.1% / 2.1%, within 10%). `synthetic_recon.obj` watertight (152 verts, 300 faces).
-- Open3D TSDF (`ScalableTSDFVolume`) path runs end-to-end on the real frame (147 179 verts) and synthetic data.
+- Open3D TSDF is now tested strictly on a dense synthetic 600 mm plane (FER-10),
+  with backend identity asserted and NumPy fallback forbidden. The sparse
+  turntable fixture produces an empty TSDF and is tested via NumPy fusion only.
+  The historical real-frame vertex count is not reproducible without its private input.
 
 **meshpipe**
 - `clean_mesh` on a messy synthetic mesh: faces **81 985 → 50 000** (exact decimation target), components **106 → 1**, `is_watertight=True`, `euler_number=2`.
