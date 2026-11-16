@@ -156,17 +156,31 @@ def test_synthetic_turntable_fuse_recovers_dimensions(tmp_path):
 
 @pytest.mark.skipif(not reconstruct._HAS_OPEN3D, reason="Open3D not installed")
 def test_open3d_tsdf_path_runs():
-    """The Open3D TSDF fusion path runs end-to-end and yields a real mesh.
+    """FER-10: the native Open3D TSDF backend itself builds the mesh, not the NumPy fallback."""
+    pytest.importorskip("open3d")
+    plane_mm = np.full((120, 160), 600.0, dtype=np.float32)  # dense depth of a wall at 600 mm
+    native = reconstruct._fuse_open3d([plane_mm], [np.eye(4)], voxel_mm=4.0)
+    assert len(native.faces) > 1000
+    assert abs(float(np.median(native.vertices[:, 2])) - 0.6) < 0.004  # surface within one voxel
 
-    We do not assert tight bbox recovery here: TSDF needs dense surface depth,
-    and the synthetic point samples make it over-carve. This test guards that
-    the high-quality path is wired correctly (intrinsics, extrinsics, integrate,
-    extract) and returns a non-empty trimesh.
-    """
+    fused = reconstruct.fuse([plane_mm], [np.eye(4)], voxel_mm=4.0)
+    assert fused.metadata["fusion_backend"] == "open3d_tsdf"
+
+    frames, poses, _ = _make_turntable(np.array([80.0, 60.0, 50.0]), n_views=12)
+    turntable = reconstruct._fuse_open3d(frames, poses, voxel_mm=4.0)
+    assert len(turntable.faces) > 0
+
+
+def test_fuse_labels_numpy_fallback(monkeypatch):
+    """When native fusion fails, fuse() still returns a mesh but says which backend made it."""
+    def unavailable(*args, **kwargs):
+        raise RuntimeError("native backend unavailable")
+
+    monkeypatch.setattr(reconstruct, "_fuse_open3d", unavailable)
     frames, poses, _ = _make_turntable(np.array([80.0, 60.0, 50.0]), n_views=12)
     mesh = reconstruct.fuse(frames, poses, voxel_mm=4.0, prefer_tsdf=True)
-    assert isinstance(mesh, trimesh.Trimesh)
-    assert len(mesh.vertices) > 0 and len(mesh.faces) > 0
+    assert len(mesh.faces) > 0
+    assert mesh.metadata["fusion_backend"] == "numpy_points"
 
 
 def test_depth_to_pointcloud_drops_invalid():

@@ -29,7 +29,7 @@ not evidence that every backend or real-capture path passes in a public clone.
 | Y8 IR | Stream switching tested with fake bytes; no real Y8 fixture shipped |
 | Y16 metric depth / Y14 disparity | Deterministic decode tests; real byte-comparison test skips without private fixtures |
 | Calibration / point clouds | Synthetic projection and invalid masking tested; real-capture tests skip |
-| Reconstruction | NumPy box fusion verified; native Open3D TSDF verification BLOCKED (FER-10), existing test can fall back |
+| Reconstruction | NumPy box fusion verified; native Open3D TSDF (uniform volume) verified on synthetic plane and box depth; `fusion_backend` metadata names the path used (FER-10) |
 | Mesh cleanup / watcher | Hole-budget, geometry, stability and retry regression tests |
 | MCP | Native bounded macOS mesh output, confined publication and synthetic depth tests; real-capture tests skip |
 | Turntable | Fake serial protocol and interleaved moves/captures; no board or firmware flash verification |

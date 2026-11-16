@@ -9,6 +9,8 @@ Tapping a **Creality CR-Scan Ferret** 3D scanner from code (and ultimately an LL
 - Test exports belong in pytest tmp_path; never overwrite tracked artifacts.
   The suite-hygiene regression checks artifact hashes around mesh tests (FER-N1).
 - Lint:  `(none detected)`
+- Native TSDF uses UniformTSDFVolume (Open3D 0.20 ScalableTSDFVolume is empty on macOS arm64);
+  fuse() sets mesh.metadata["fusion_backend"] (FER-10).
 - MCP mesh acceptance must produce a mesh; macOS uses parent RSS monitoring
   (50 ms sampling, 1 GiB termination threshold), CPU/file limits and a timeout (FER-04).
 - Capture tests use fake RPC only. Depth defaults to explicit Y14; select Y16

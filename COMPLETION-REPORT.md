@@ -51,14 +51,14 @@ Ground truth: `probe/rpc_depth.npy` — a REAL metric-depth frame (uint16, 800×
 **reconstruct**
 - Real frame → 183 412-pt cloud written to `artifacts/real_recon.ply` (2.2 MB), reloads with matching count.
 - Synthetic turntable: 80×60×50 mm box rendered from 12 angles, fused via inverse-rotation poses → measured bbox **[81.15, 61.27, 51.03] mm** vs expected [80, 60, 50] (rel err 1.4% / 2.1% / 2.1%, within 10%). `synthetic_recon.obj` watertight (152 verts, 300 faces).
-- **FER-10 BLOCKED (2026-11-15):** the existing TSDF test can pass via NumPy
-  fallback and does not prove native fusion. Two dense-plane fixture attempts
-  (120×160 and 800×640) returned empty native meshes with Open3D 0.20.0 on
-  macOS arm64/Python 3.12.16. A direct uint16 RGBD integration also produced no
-  voxels. The attempted strict test was restored under the two-attempt rule;
-  native TSDF success remains unverified. No dependency or production fallback
-  behavior was changed. The historical real-frame claim is not reproducible
-  without its private input.
+- **FER-10 (2026-11-15):** Open3D 0.20.0's `ScalableTSDFVolume` integrates no
+  voxels on macOS arm64 (Open3D's own PrimeSense example included), so `fuse()`
+  silently used the NumPy fallback. Native fusion now uses a `UniformTSDFVolume`
+  sized to the posed depth points (at most 256 voxels per side), and
+  `mesh.metadata["fusion_backend"]` records which path ran. The strict test fuses
+  dense 600 mm plane depth natively (surface within one voxel) and the 12-view
+  turntable box; a second test checks the fallback is labelled. The historical
+  real-frame claim is not reproducible without its private input.
 
 **meshpipe**
 - `clean_mesh` on a messy synthetic mesh: faces **81 985 → 50 000** (exact decimation target), components **106 → 1**, `is_watertight=True`, `euler_number=2`.
