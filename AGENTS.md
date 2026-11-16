@@ -6,6 +6,8 @@ Tapping a **Creality CR-Scan Ferret** 3D scanner from code (and ultimately an LL
 ## How to verify a change
 - Install: Python 3.12, `python -m pip install -r requirements-lock.txt` (FER-01/13).
 - Tests: `pytest -q`
+- Linux needs system OpenGL libs (libgl1, libopengl0, libegl1) for Open3D and PyMeshLab; CI installs them and
+  fails if either import fails, so their tests cannot skip silently.
 - Test exports belong in pytest tmp_path; never overwrite tracked artifacts.
   The suite-hygiene regression checks artifact hashes around mesh tests (FER-N1).
 - Lint:  `(none detected)`

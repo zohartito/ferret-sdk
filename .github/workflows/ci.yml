@@ -33,7 +33,13 @@ jobs:
         cache: pip
     - name: Install
       run: |
+        # Open3D and PyMeshLab load system OpenGL libraries that headless runners lack;
+        # without them both imports fail and their tests skip silently.
+        sudo apt-get update -qq
+        sudo apt-get install -y --no-install-recommends libgl1 libopengl0 libegl1 libgomp1
         python -m pip install --upgrade pip
         pip install -r requirements-lock.txt
+    - name: Check native mesh libraries load
+      run: python -c "import open3d, pymeshlab; print('open3d', open3d.__version__)"
     - name: Run pytest
       run: pytest -q --tb=short

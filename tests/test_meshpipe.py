@@ -210,6 +210,7 @@ def test_zero_hole_budget_without_pymeshlab(tmp_path, monkeypatch):
     assert result["faces_after"] == len(mesh.faces)
 
 
+@pytest.mark.skipif(not meshpipe._HAS_PYMESHLAB, reason="decimation-hole recovery needs PyMeshLab")
 def test_recovery_closes_only_new_decimation_hole(tmp_path, monkeypatch):
     mesh = trimesh.creation.icosphere(subdivisions=1)
     source, output = tmp_path / "closed.obj", tmp_path / "clean.obj"
