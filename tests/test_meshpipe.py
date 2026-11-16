@@ -185,3 +185,51 @@ def test_watch_folder_processes_new_meshes(tmp_path: Path) -> None:
     assert cleaned_files == ["obj_a_clean.obj", "obj_b_clean.obj"]
     for stats in results:
         assert stats["components_after"] == 1
+
+
+@pytest.mark.parametrize("max_hole_edges", [0, 30])
+@pytest.mark.parametrize("target_faces", [50_000, 32])
+def test_original_open_boundaries_survive_cleanup(tmp_path, max_hole_edges, target_faces):
+    mesh = trimesh.creation.cylinder(radius=1, height=3, sections=32)
+    mesh.update_faces(np.abs(mesh.face_normals[:, 2]) < 0.5)
+    mesh.remove_unreferenced_vertices()
+    source, output = tmp_path / "open.obj", tmp_path / "clean.obj"
+    mesh.export(source)
+    result = meshpipe.clean_mesh(source, output, max_hole_edges=max_hole_edges,
+                                 target_faces=target_faces)
+    assert not result["watertight"]
+    if target_faces == 50_000:
+        assert result["faces_after"] == result["faces_before"] == 64
+
+
+def test_zero_hole_budget_without_pymeshlab(tmp_path, monkeypatch):
+    mesh = trimesh.creation.icosphere(subdivisions=1)
+    mesh.update_faces(np.arange(len(mesh.faces)) != 0)
+    source, output = tmp_path / "open.obj", tmp_path / "clean.obj"
+    mesh.export(source)
+    monkeypatch.setattr(meshpipe, "_HAS_PYMESHLAB", False)
+    result = meshpipe.clean_mesh(source, output, max_hole_edges=0)
+    assert not result["watertight"]
+    assert result["faces_after"] == len(mesh.faces)
+
+
+def test_recovery_closes_only_new_decimation_hole(tmp_path, monkeypatch):
+    mesh = trimesh.creation.icosphere(subdivisions=1)
+    source, output = tmp_path / "closed.obj", tmp_path / "clean.obj"
+    mesh.export(source)
+
+    def punch_hole(mesh, target_faces):
+        mesh.update_faces(np.arange(len(mesh.faces)) != 0)
+        return mesh
+
+    monkeypatch.setattr(meshpipe, "_decimate", punch_hole)
+    result = meshpipe.clean_mesh(source, output, target_faces=20, max_hole_edges=0)
+    assert result["watertight"]
+
+
+def test_trimesh_three_edge_budget_preserves_quad_hole():
+    mesh = trimesh.creation.box()
+    mesh.update_faces(mesh.face_normals[:, 2] < 0.5)
+    faces_before = len(mesh.faces)
+    result = meshpipe._fill_holes_trimesh(mesh, 3)
+    assert len(result.faces) == faces_before and not result.is_watertight
