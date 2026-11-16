@@ -70,7 +70,13 @@ and `pip freeze`, then rerun the offline suite and eval gate.
 ```bash
 # CrealityScan's RPCServer daemon must be running (launch CrealityScan once)
 .venv/bin/python probe/ferret_rpc_depth.py   # -> rpc_depth.npy + rpc_depth_preview.png
+# For a daemon independently known to be in computed-depth mode:
+.venv/bin/python probe/ferret_rpc_depth.py 3 24 Y16
 ```
+
+The probe saves float32 millimetres (zero = invalid), plus the original raw
+bytes. Its default Y14 mode uses the package disparity decoder; it rejects
+other payload sizes instead of guessing their format.
 
 ## Layout
 ```

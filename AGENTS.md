@@ -11,6 +11,8 @@ Tapping a **Creality CR-Scan Ferret** 3D scanner from code (and ultimately an LL
   (50 ms sampling, 1 GiB termination threshold), CPU/file limits and a timeout (FER-04).
 - Capture tests use fake RPC only. Depth defaults to explicit Y14; select Y16
   only for a known computed-depth daemon mode. IR switches to IR_RIGHT/Y8 (FER-02).
+- The depth probe accepts an explicit Y14/Y16 output mode and saves float32 mm;
+  its fake-RPC regression tests must not connect to the daemon (FER-03).
 
 ## Self-improving loop (close the loop)
 Run an agent until it verifies its own output, then commit:

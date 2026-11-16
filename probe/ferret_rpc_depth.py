@@ -6,7 +6,8 @@ Mac-native depth: pull a depth frame from the Ferret via the daemon's msgpack-RP
 The daemon registers per-device RPC methods suffixed with the device's USB
 port-path (e.g. ob_rpc_start_stream1-2-1). That suffix CHANGES on re-plug, so we
 discover it from the daemon's enumeration log and verify it against the live server.
-Usage: ferret_rpc_depth.py [sensor] [format]   (default 3 24 = depth Y14)
+Usage: ferret_rpc_depth.py [sensor] [format] [Y14|Y16] (default 3 24 Y14)
+The last argument identifies the daemon output mode; it is not inferred by size.
 """
 import re
 import sys
@@ -16,9 +17,13 @@ import numpy as np
 from rpc_client import MsgpackRpcClient, RpcError
 from rpc_view import png8, norm8
 
+PROJECT = Path(__file__).resolve().parents[1]
+if str(PROJECT) not in sys.path:
+    sys.path.insert(0, str(PROJECT))
+from ferret.capture import decode_depth_frame, OB_SENSOR_DEPTH, OB_FORMAT_Y14
+
 OUT = Path(__file__).resolve().parent
 LOG = Path("/Library/Creality/Log/ScannerStreamSDK.log")
-DEPTH_SCALE = 0.2
 W, H, FPS = 1280, 800, 30
 _DEV = None
 
@@ -66,6 +71,12 @@ def main():
     sensor = int(sys.argv[1]) if len(sys.argv) > 1 else 3   # OB_SENSOR_DEPTH
     fmt = int(sys.argv[2]) if len(sys.argv) > 2 else 24      # OB_FORMAT_Y14
 
+    pixel_format = sys.argv[3] if len(sys.argv) > 3 else "Y14"
+    if sensor != OB_SENSOR_DEPTH or fmt != OB_FORMAT_Y14:
+        raise ValueError("depth probe requires sensor=3 and stream format=24")
+    if pixel_format not in {"Y14", "Y16"}:
+        raise ValueError("output pixel format must be Y14 or Y16")
+
     c = MsgpackRpcClient(port=10010, timeout=8.0)
     print("connected to control port 10010")
 
@@ -92,7 +103,10 @@ def main():
         slots = [bytes(x) for x in fr
                  if isinstance(x, (bytes, bytearray)) and len(x) > 1000]
         if slots:
-            got = max(slots, key=len)
+            if len(slots) != 1:
+                c.close()
+                raise ValueError("ambiguous RPC frameset: multiple image payloads")
+            got = slots[0]
             break
         if i % 20 == 0:
             print(f"  ...waiting for data (get_frame {i})")
@@ -111,26 +125,16 @@ def main():
     (OUT / "rpc_raw_frame.bin").write_bytes(got)  # raw bytes for offline iteration
     n = len(got)
     print(f"saved raw frame -> rpc_raw_frame.bin ({n} bytes)")
-    if n == 1792000:
-        print("  = raw Y14 packed (1280x800, 14-bit). Convert offline with calibration.")
-    if n % 2 != 0:
-        (OUT / "rpc_frame.bin").write_bytes(got)
-        print(f"odd size {n} — saved raw to rpc_frame.bin")
-        return
-    u16 = np.frombuffer(got, "<u2")
-    h2, w2 = {512000: (800, 640), 1024000: (800, 1280),
-              480000: (800, 600), 256000: (400, 640)}.get(
-                  u16.size, (u16.size // 640, 640))
-    depth = u16.reshape(h2, w2)
-    mm = depth.astype(np.float32) * DEPTH_SCALE
-    good = (depth > 0) & (depth < 65535)
+    mm = decode_depth_frame(got, sensor=sensor, pixel_format=pixel_format)
+    h2, w2 = mm.shape
+    good = mm > 0
     valid = mm[good]
     print(f"\nDEPTH {h2}x{w2}  ({n} bytes)  valid={100*good.mean():.1f}%")
     if valid.size:
         print(f"depth mm  p25/p50/p75 = {int(np.percentile(valid,25))}/"
               f"{int(np.percentile(valid,50))}/{int(np.percentile(valid,75))}")
     print(f"center pixel: {mm[h2//2, w2//2]:.0f} mm")
-    np.save(OUT / "rpc_depth.npy", depth)
+    np.save(OUT / "rpc_depth.npy", mm)
     png8(OUT / "rpc_depth_preview.png", norm8(np.where(good, mm, 0)))
     print("saved rpc_depth.npy + rpc_depth_preview.png")
 
