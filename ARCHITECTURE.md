@@ -2,9 +2,11 @@
 
 An agentic capture → reconstruction → post-processing pipeline for the Creality
 **CR-Scan Ferret Pro**, plus an optional 3D-printed (later motorized) turntable.
-This document is the honest plan: it separates what is **shippable today** from
-what depends on a **make-or-break reverse-engineering spike**, and it lets the
-adversarial verifications temper the research optimism.
+**Updated platform decision (2026-11-15, FER-12):** macOS capture uses the
+CrealityScan Orbbec daemon's local msgpack-RPC interface. The earlier direct-USB
+investigation below is historical and superseded for capture-host selection;
+its AVFoundation/libusb limitations do not rule out daemon-based depth capture.
+See [README.md](README.md), [PROTOCOL.md](PROTOCOL.md), and the current §4.
 
 ---
 
@@ -114,22 +116,25 @@ Mirror Zohar's existing `tools-dashboard` pattern verbatim — do not invent a f
 
 ---
 
-## 4. Platform Decision
+## 4. Current Platform Decision — supersedes the direct-USB investigation
 
-**Build the capture + reconstruction host on the Windows 11 desktop, using WSL2 Ubuntu for raw capture. Use the Mac strictly as a thin dev/agent client over Tailscale (`gpu-pc`). macOS is IR-only and a dead end for depth.**
+Use **macOS + the running Orbbec RPCServer shipped with CrealityScan** for the
+implemented capture path. The Python client connects to the daemon, discovers
+the per-device method suffix, and requests frames without claiming USB itself.
+Y14 disparity and Y16 computed-depth decoders live in ferret/capture.py.
 
-Reasoning, tempered by the verifications:
+The old macOS "IR-only" conclusion applied to direct AVFoundation/UVC access.
+The former WSL2-only recommendation was made before the daemon RPC path was
+established. WSL2/Linux direct-USB capture remains historical research, not a
+required or verified host configuration for this SDK.
 
-| Host | Verdict | Why |
-|---|---|---|
-| **macOS (libusb/libuvc)** | ❌ dead end beyond IR | `UVCAssistant` holds all UVC interfaces exclusively; escape needs `sudo` or an entitlement command-line apps cannot hold; capture is whole-device. Even if you got bytes, no Mac depth-decode path exists. **Confirmed conf 0.9.** Keep only for IR-only checkerboard calibration via AVFoundation. |
-| **Windows-native (OpenCV/MSMF)** | ❌ IR-only OR breaks CrealityScan | MSMF only surfaces the 8-bit IR function (16-bit depth isn't a standard MF subtype). The raw path (libuvc + libusbK via Zadig) moves the device out of the UVC stack and **breaks CrealityScan**. Can't have both without re-running Zadig back and forth. |
-| **WSL2 on the Windows box (via usbipd-win)** | ✅ the only viable raw-capture host | Only environment exposing ALL four functions as independent raw `/dev/videoN` nodes; co-located with CrealityScan (for ground-truth A/B without a driver swap — just detach/attach) and the RTX 4070 Ti SUPER (CUDA reconstruction); uses tooling Zohar already has. **Requires a custom WSL kernel** (stock WSL ships without UVC/V4L2) — this is the real cost, not link bandwidth. |
-| **Native Linux / Hyper-V Ubuntu VM** | 🟡 fallback | Ships UVC/V4L2 out of the box, avoids kernel rebuilds and usbip isochronous-bandwidth questions. Fall back here if WSL kernel maintenance becomes painful or usbip drops frames. |
-
-**Crucial honesty:** even on WSL2, raw depth is NOT guaranteed. The depth function likely needs a vendor UVC Extension Unit (XU) enable command (the Creality-on-Wine work confirms this family drives the camera via `IKsControl` XU passthrough). So the WSL2 path is "the only host where the spike *can* succeed," not "the host where it *will*."
-
-**Because of that uncertainty, the safe path is the GUI-as-engine fallback:** keep CrealityScan as the capture engine on Windows and have the pipeline operate on its *exported* meshes (Tier-1). This sidesteps the entire depth-protocol question and is buildable today.
+Live sensor delivery, daemon mode, stream switching and metric accuracy still
+require hardware verification. The offline suite checks fake-RPC control flow
+and deterministic decoding, and does not establish those live properties.
+Mesh cleanup, NumPy reconstruction and native Open3D TSDF work offline. Native
+TSDF uses `UniformTSDFVolume`, verified on synthetic plane and turntable-box depth
+(FER-10); real multi-view fusion quality remains unverified. See
+[logs/AUDIT-2026-11-15.md](logs/AUDIT-2026-11-15.md).
 
 ---
 

@@ -20,6 +20,7 @@ production that object is a :class:`serial.Serial`; in tests it is a fake.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections.abc import Iterator
 
 # Defaults chosen for a NEMA17 + TMC2209 turntable; mirrored in the firmware.
 DEFAULT_BAUD = 115200
@@ -89,18 +90,20 @@ class TurntableController:
         reply = self._send("P", want_value=True)
         return float(reply)
 
-    def step_sequence(self, steps: int) -> list:
+    def step_sequence(self, steps: int) -> Iterator[float]:
         """Yield the absolute angle after each of ``steps`` equal rotations
         that together complete one full 360 deg turn. Useful for turntable
-        scans: 12 steps -> 30 deg each. Returns the list of angles visited."""
+        scans: 12 steps -> 30 deg each. Capture before advancing the iterator."""
         if steps <= 0:
             raise ValueError(f"steps must be positive, got {steps}")
         increment = 360.0 / steps
-        visited = []
-        for _ in range(steps):
-            self.rotate(increment)
-            visited.append(self.angle)
-        return visited
+
+        def moves() -> Iterator[float]:
+            for _ in range(steps):
+                self.rotate(increment)
+                yield self.angle
+
+        return moves()
 
     def close(self) -> None:
         """Close the underlying transport if it supports close()."""

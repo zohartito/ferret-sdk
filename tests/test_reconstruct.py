@@ -3,13 +3,13 @@
 Two levels of verification:
 
 1. REAL: back-project the captured scanner frame (probe/rpc_depth.npy) into a
-   point cloud, write artifacts/real_recon.ply, and assert it is non-empty with
+   point cloud, write a temporary real_recon.ply, and assert it is non-empty with
    physically sane bounds.
 
 2. SYNTHETIC turntable: take a known box primitive, render it from 12 turntable
    angles into synthetic depth frames with the device intrinsics, fuse with the
    known inverse-rotation poses, and assert the reconstructed bounding box
-   matches the original within 10 percent. Writes artifacts/synthetic_recon.obj.
+   matches the original within 10 percent. Writes a temporary synthetic_recon.obj.
 
 The synthetic renderer is a pure-numpy pinhole z-buffer (no raycaster), so the
 suite has no dependency on rtree / pyembree / Open3D.
@@ -27,7 +27,6 @@ from ferret import reconstruct
 
 PROJECT = Path(__file__).resolve().parents[1]
 REAL_DEPTH = PROJECT / "probe" / "rpc_depth.npy"
-ARTIFACTS = PROJECT / "artifacts"
 
 # Device intrinsics for a depth frame, matching ferret.calib / reconstruct.
 DEPTH_W, DEPTH_H = 640, 800
@@ -91,7 +90,7 @@ def _make_turntable(extents_mm, n_views: int = 12, standoff_mm: float = 600.0):
 
 # --- real data -----------------------------------------------------------------
 @pytest.mark.skipif(not REAL_DEPTH.exists(), reason="real depth frame missing")
-def test_real_depth_to_pointcloud():
+def test_real_depth_to_pointcloud(tmp_path):
     raw = np.load(REAL_DEPTH)
     assert raw.dtype == np.uint16 and raw.shape == (800, 640)
 
@@ -111,7 +110,7 @@ def test_real_depth_to_pointcloud():
     # Lateral spread must be non-trivial (a real scene, not a single column).
     assert np.ptp(points[:, 0]) > 0.05 and np.ptp(points[:, 1]) > 0.05
 
-    out = reconstruct.save_ply(ARTIFACTS / "real_recon.ply", points)
+    out = reconstruct.save_ply(tmp_path / "real_recon.ply", points)
     assert out.exists() and out.stat().st_size > 0
 
     # Round-trip: the PLY must reload with the same point count.
@@ -120,7 +119,7 @@ def test_real_depth_to_pointcloud():
 
 
 # --- synthetic turntable -------------------------------------------------------
-def test_synthetic_turntable_fuse_recovers_dimensions():
+def test_synthetic_turntable_fuse_recovers_dimensions(tmp_path):
     expected = np.array([80.0, 60.0, 50.0])  # mm
     frames, poses, original = _make_turntable(expected, n_views=12)
 
@@ -142,7 +141,7 @@ def test_synthetic_turntable_fuse_recovers_dimensions():
         f"(rel err {rel_err})"
     )
 
-    out = reconstruct.save_obj(ARTIFACTS / "synthetic_recon.obj", mesh)
+    out = reconstruct.save_obj(tmp_path / "synthetic_recon.obj", mesh)
     assert out.exists() and out.stat().st_size > 0
 
     # Sanity: original box extents are exactly the expected ones.
@@ -157,17 +156,31 @@ def test_synthetic_turntable_fuse_recovers_dimensions():
 
 @pytest.mark.skipif(not reconstruct._HAS_OPEN3D, reason="Open3D not installed")
 def test_open3d_tsdf_path_runs():
-    """The Open3D TSDF fusion path runs end-to-end and yields a real mesh.
+    """FER-10: the native Open3D TSDF backend itself builds the mesh, not the NumPy fallback."""
+    pytest.importorskip("open3d")
+    plane_mm = np.full((120, 160), 600.0, dtype=np.float32)  # dense depth of a wall at 600 mm
+    native = reconstruct._fuse_open3d([plane_mm], [np.eye(4)], voxel_mm=4.0)
+    assert len(native.faces) > 1000
+    assert abs(float(np.median(native.vertices[:, 2])) - 0.6) < 0.004  # surface within one voxel
 
-    We do not assert tight bbox recovery here: TSDF needs dense surface depth,
-    and the synthetic point samples make it over-carve. This test guards that
-    the high-quality path is wired correctly (intrinsics, extrinsics, integrate,
-    extract) and returns a non-empty trimesh.
-    """
+    fused = reconstruct.fuse([plane_mm], [np.eye(4)], voxel_mm=4.0)
+    assert fused.metadata["fusion_backend"] == "open3d_tsdf"
+
+    frames, poses, _ = _make_turntable(np.array([80.0, 60.0, 50.0]), n_views=12)
+    turntable = reconstruct._fuse_open3d(frames, poses, voxel_mm=4.0)
+    assert len(turntable.faces) > 0
+
+
+def test_fuse_labels_numpy_fallback(monkeypatch):
+    """When native fusion fails, fuse() still returns a mesh but says which backend made it."""
+    def unavailable(*args, **kwargs):
+        raise RuntimeError("native backend unavailable")
+
+    monkeypatch.setattr(reconstruct, "_fuse_open3d", unavailable)
     frames, poses, _ = _make_turntable(np.array([80.0, 60.0, 50.0]), n_views=12)
     mesh = reconstruct.fuse(frames, poses, voxel_mm=4.0, prefer_tsdf=True)
-    assert isinstance(mesh, trimesh.Trimesh)
-    assert len(mesh.vertices) > 0 and len(mesh.faces) > 0
+    assert len(mesh.faces) > 0
+    assert mesh.metadata["fusion_backend"] == "numpy_points"
 
 
 def test_depth_to_pointcloud_drops_invalid():

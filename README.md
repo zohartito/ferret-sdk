@@ -16,51 +16,84 @@ fighting the macOS USB stack.
 - We pull real frames this way: IR (Y8), raw disparity (Y14), and the daemon's **computed metric depth** (16-bit, mm via scale `0.2`).
 
 ## Status
-The full `ferret` package + pipeline now exist and are tested **offline** (47/47
-tests pass; the live device is never touched). See [COMPLETION-REPORT.md](COMPLETION-REPORT.md)
-for the per-component breakdown, the exact numbers, and what still needs hardware.
+The offline suite at code revision 3a93ad9 is **92 passed, 7 skipped** on
+Python 3.12.16/macOS arm64 (2026-11-15), up from baseline 64 passed/7 skipped.
+Versioned validation and backend limits
+are recorded in [logs/AUDIT-2026-11-15.md](logs/AUDIT-2026-11-15.md).
+The older [COMPLETION-REPORT.md](COMPLETION-REPORT.md) is a historical report,
+not evidence that every backend or real-capture path passes in a public clone.
 
-| Capability | State |
+| Capability | Offline evidence and limits |
 |---|---|
-| Connect to daemon, enumerate device | ✅ probe proven; refactored into `ferret.capture` (live path not re-run, safety) |
-| Pull IR frame (Y8) | ✅ probe proven; `FerretCamera.get_ir()` coded, decode untested on real Y8 |
-| Pull **metric depth** over RPC | ✅ working — Y16 (× 0.2 mm) decode reproduces real `rpc_depth.npy` byte-exact |
-| Robust to raw-Y14 mode | ✅ decode built + tested — 14-bit unpack round-trips exactly; disparity→depth self-consistent with `z0`; high sentinel `0x3FFF` rejected. ⚠️ live daemon delivery of Y14 still unconfirmed |
-| `ferret.calib` — intrinsics + depth→points (meters) | ✅ 5/5 tests on real frame; 183 412-pt cloud |
-| `ferret.reconstruct` — point cloud + TSDF/numpy fusion | ✅ 7/7 tests; real frame → PLY, synthetic box recovers bbox within ~2% |
-| `ferret.meshpipe` — clean / decimate / Z-up / watch | ✅ 4/4 tests; 81 985→50 000 faces, 106→1 components, watertight |
-| `ferret_mcp.py` — MCP server (5 tools) | ✅ 7/7 tests; `depth_stats` + `reconstruct_pointcloud` + `clean_mesh` verified offline |
-| `hardware/turntable` — CAD + firmware + host | ✅ STL renders watertight (200×200×12 mm); host control 14/14 tests vs fake serial; firmware flash unverified (no board) |
+| Capture RPC | Fake-transport stream selection and format checks; live daemon path unverified |
+| Y8 IR | Stream switching tested with fake bytes; no real Y8 fixture shipped |
+| Y16 metric depth / Y14 disparity | Deterministic decode tests; real byte-comparison test skips without private fixtures |
+| Calibration / point clouds | Synthetic projection and invalid masking tested; real-capture tests skip |
+| Reconstruction | NumPy box fusion verified; native Open3D TSDF (uniform volume) verified on synthetic plane and box depth; `fusion_backend` metadata names the path used (FER-10) |
+| Mesh cleanup / watcher | Hole-budget, geometry, stability and retry regression tests |
+| MCP | Native bounded macOS mesh output, confined publication and synthetic depth tests; real-capture tests skip |
+| Turntable | Fake serial protocol and interleaved moves/captures; no board or firmware flash verification |
 
-**Live-device caveat:** the capture RPC sequence is refactored verbatim from the
-proven probe but, per the hard safety rule, was **not** re-run against the daemon
-this session. `get_frame` returns raw Y14 *or* computed depth depending on the
-daemon's processing mode; the Y14 path is now coded + unit-tested, but whether the
-daemon actually emits Y14 (vs computed Y16) still needs one live raw capture to confirm.
+**Live-device caveat:** stream switching and decoding are tested with fake RPC
+transports, not reverified on hardware. `get_ir()` selects IR_RIGHT/Y8 and
+`get_depth_mm()` selects DEPTH/Y14. The daemon can return raw Y14 or computed Y16
+depending on its processing mode; use `FerretCamera(depth_format="Y16")` only
+when that mode is independently known. The default is strict Y14. Payload length
+cannot distinguish Y8 from Y16, and the RPC envelope has no verified format
+metadata. Unknown lengths and multiple image slots are rejected. Actual mode
+delivery and stale frames after a switch still require hardware verification.
 
 ## Quickstart
 
-**Requires Python 3.11.** `open3d` has no wheel for 3.12 / 3.13 / 3.14, so
-`pip install -r requirements.txt` fails on a newer default `python3`. Create the
-venv with 3.11 explicitly:
+**Use Python 3.12.** The locked offline environment was verified on macOS
+arm64 with Python 3.12.16 and Open3D 0.20.0 (which has a Python 3.12 wheel).
+NumPy 2.5 requires Python >=3.12; Python 3.11 cannot install these dependencies.
+CI also uses Python 3.12. Other Python/platform combinations are not verified.
 
 ```bash
-python3.11 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -r requirements-lock.txt
+.venv/bin/python -m pip check
 ```
+
+`requirements.txt` records direct dependency ranges; `requirements-lock.txt`
+pins the complete tested environment, including transitive dependencies. Refresh
+it deliberately in a clean Python 3.12 environment with `pip install -r requirements.txt`
+and `pip freeze`, then rerun the offline suite and eval gate.
 
 ### Offline demo (works on a fresh clone — no scanner, no daemon)
 ```bash
-.venv/bin/pytest -q                                        # 47 offline tests
+.venv/bin/pytest -q                                        # offline suite; private-fixture tests skip
 .venv/bin/python examples/render_mesh.py \
   artifacts/motorcycle_rhino_ready.obj                     # render committed mesh
+.venv/bin/python examples/e2e_offline.py                   # synthetic fresh-clone E2E
 ```
+
+The public clone does **not** include `probe/rpc_depth.npy`, `rpc_raw_frame.bin`,
+or the historical `.npy` outputs (they are git-ignored). Seven tests requiring
+those real captures remain explicitly skipped. The E2E example uses a deterministic
+synthetic sloped plane when the real frame is absent and labels that substitution;
+it verifies software reproducibility, not sensor accuracy. Outputs go to the
+ignored `artifacts/offline-demo/`, or a chosen `--output-dir`.
 
 ### Live capture (needs the hardware)
 ```bash
 # CrealityScan's RPCServer daemon must be running (launch CrealityScan once)
 .venv/bin/python probe/ferret_rpc_depth.py   # -> rpc_depth.npy + rpc_depth_preview.png
+# For a daemon independently known to be in computed-depth mode:
+.venv/bin/python probe/ferret_rpc_depth.py 3 24 Y16
 ```
+
+The probe saves float32 millimetres (zero = invalid), plus the original raw
+bytes. Its default Y14 mode uses the package disparity decoder; it rejects
+other payload sizes instead of guessing their format.
+
+MCP `clean_mesh` writes only directly inside the server's `artifacts/` directory.
+Pass a filename or a path there. Existing files are refused by default; replacing
+a regular file requires `overwrite=True`. Symlink destinations and ancestors are
+refused, including with overwrite authorization. Native cleanup runs in a worker
+with CPU/file/time bounds; macOS memory supervision uses a 1 GiB RSS threshold
+sampled every 50 ms (it is not an allocation-time memory ceiling).
 
 ## Layout
 ```
@@ -72,9 +105,9 @@ ferret/                 # the SDK package (built + tested offline)
   meshpipe.py           # clean_mesh (largest comp, fill holes, recenter, Z-up, decimate) + watch_folder
 ferret_mcp.py           # MCP server (MCPServer): depth_stats, reconstruct_pointcloud, clean_mesh, turntable_rotate, list_artifacts
 hardware/turntable/     # turntable.scad + firmware/turntable.ino + turntable_control.py + BOM
-tests/                  # pytest suite (47 tests, all offline)
+tests/                  # offline pytest suite; seven private-fixture tests skip
 artifacts/              # inspectable outputs: PLY / OBJ / STL / PNG
-probe/                  # original device-cracking scripts + the REAL captured rpc_depth.npy
+probe/                  # device investigation scripts; real raw/depth fixtures are not shipped
   ferret_rpc_depth.py   # main: pull depth via daemon RPC (auto-discovers device id)
   rpc_client.py         # minimal msgpack-RPC (rpclib) client for the daemon
 ARCHITECTURE.md         # system design + platform decision

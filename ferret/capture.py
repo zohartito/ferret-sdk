@@ -45,9 +45,7 @@ DEFAULT_FPS = 30
 
 # Frame byte sizes -> (height, width). Used to interpret a Y16 byte blob.
 # Y16 is 2 bytes/pixel, so byte_count // 2 must equal width * height. Only the
-# 800x640 entry is verified against real captured data; other sizes fall through
-# to the 640-wide heuristic in decode_y16_depth_mm rather than risk a guessed
-# shape that would raise on reshape.
+# 800x640 entry is verified against real captured data; reject other sizes.
 _Y16_SHAPE_TABLE = {
     1_024_000: (800, 640),  # 800 * 640 * 2 = 1,024,000 — verified on real data
 }
@@ -163,16 +161,32 @@ def decode_y16_depth_mm(frame_bytes: bytes) -> np.ndarray:
 
     Invalid raw values (0 and 0xFFFF) become 0.0 mm.
     """
-    u16 = np.frombuffer(frame_bytes, dtype="<u2")
     shape = _Y16_SHAPE_TABLE.get(len(frame_bytes))
     if shape is None:
-        # Fall back to a 640-wide frame, matching the probe's heuristic.
-        shape = (u16.size // DEPTH_WIDTH, DEPTH_WIDTH)
+        raise ValueError(f"unsupported Y16 frame byte length: {len(frame_bytes)}")
+    u16 = np.frombuffer(frame_bytes, dtype="<u2")
     depth_raw = u16.reshape(shape)
     mm = depth_raw.astype(np.float32) * DEPTH_VALUE_SCALE
     invalid = (depth_raw == Y16_INVALID[0]) | (depth_raw == Y16_INVALID[1])
     mm[invalid] = 0.0
     return mm
+
+
+def decode_depth_frame(blob: bytes, sensor: int, pixel_format: str,
+                       calib: FerretCalibration = DEFAULT_CALIB) -> np.ndarray:
+    """Decode an explicitly identified depth payload; never infer modality by size.
+
+    The reverse-engineered RPC envelope has no verified format metadata. The
+    caller must select the daemon's output mode (Y14 disparity or Y16 computed
+    depth). Equal-sized IR/Y16 bytes cannot establish their own provenance.
+    """
+    if sensor != OB_SENSOR_DEPTH:
+        raise ValueError("depth decoding requires the depth sensor")
+    if pixel_format == "Y14":
+        return disparity_to_depth_mm(unpack_y14(blob), calib)
+    if pixel_format == "Y16":
+        return decode_y16_depth_mm(blob)
+    raise ValueError(f"unsupported depth pixel format: {pixel_format}")
 
 
 def _candidate_suffixes(log_text: str) -> list[str]:
@@ -214,10 +228,15 @@ class FerretCamera:
     def __init__(self, host: str = "127.0.0.1", port: int = CONTROL_PORT,
                  fmt: int = OB_FORMAT_Y14, timeout: float = 8.0,
                  calib: FerretCalibration = DEFAULT_CALIB,
-                 log_path: Path = LOG_PATH):
+                 log_path: Path = LOG_PATH, depth_format: str = "Y14"):
         self.host = host
         self.port = port
         self.fmt = fmt
+        if depth_format not in {"Y14", "Y16"}:
+            raise ValueError("depth_format must be Y14 or Y16")
+        self.depth_format = depth_format
+        self._sensor = OB_SENSOR_DEPTH
+        self._stream_fmt = fmt
         self.timeout = timeout
         self.calib = calib
         self.log_path = Path(log_path)
@@ -244,9 +263,7 @@ class FerretCamera:
         if self._client is not None:
             if self._streaming and self._suffix is not None:
                 try:  # GUI uses the 5-arg form; matches start_stream for a clean stop
-                    self._client.call(self._method("ob_rpc_stop_stream"),
-                                      OB_SENSOR_DEPTH, self.fmt, NATIVE_WIDTH,
-                                      NATIVE_HEIGHT, DEFAULT_FPS, timeout=3.0)
+                    self._stop_stream()
                 except Exception:
                     pass  # closing the socket also stops the stream
             self._client.close()
@@ -263,31 +280,25 @@ class FerretCamera:
     def get_depth_mm(self, max_polls: int = 150) -> np.ndarray:
         """Return one metric-depth frame as float32 HxW (0.0 = invalid).
 
-        Decodes Y16 computed depth or Y14 raw disparity depending on the frame
-        size the daemon delivers (the daemon's processing mode decides which).
+        Select depth_format="Y16" only when the daemon is configured to emit
+        computed depth. The default Y14 mode rejects a Y8/Y16-sized payload.
         """
+        self._ensure_stream(OB_SENSOR_DEPTH, self.fmt)
         blob = self._grab_frame(max_polls=max_polls)
         return self._decode_depth(blob)
 
     def get_ir(self, max_polls: int = 150) -> np.ndarray:
         """Return one IR frame as a uint8 HxW array (Y8)."""
+        self._ensure_stream(OB_SENSOR_IR_RIGHT, OB_FORMAT_Y8)
         blob = self._grab_frame(max_polls=max_polls)
-        arr = np.frombuffer(blob, dtype=np.uint8)
-        if arr.size == NATIVE_WIDTH * NATIVE_HEIGHT:
-            return arr.reshape(NATIVE_HEIGHT, NATIVE_WIDTH)
-        return arr.reshape(arr.size // NATIVE_WIDTH, NATIVE_WIDTH)
+        if len(blob) != NATIVE_WIDTH * NATIVE_HEIGHT:
+            raise ValueError(f"unsupported Y8 frame byte length: {len(blob)}")
+        return np.frombuffer(blob, dtype=np.uint8).reshape(NATIVE_HEIGHT, NATIVE_WIDTH)
 
     # -- decode dispatch ----------------------------------------------------
     def _decode_depth(self, blob: bytes) -> np.ndarray:
-        """Pick the Y16 or Y14 decode path from the frame byte length."""
-        size = len(blob)
-        y14_full = NATIVE_WIDTH * NATIVE_HEIGHT * 14 // 8  # 1,792,000
-        if size == y14_full:
-            raw_disp = unpack_y14(blob, NATIVE_WIDTH, NATIVE_HEIGHT)
-            return disparity_to_depth_mm(raw_disp, self.calib)
-        if size % 2 == 0:
-            return decode_y16_depth_mm(blob)
-        raise ValueError(f"unrecognised depth frame size: {size} bytes")
+        """Use the tracked sensor and explicitly selected output format."""
+        return decode_depth_frame(blob, self._sensor, self.depth_format, self.calib)
 
     # -- low-level RPC ------------------------------------------------------
     def _method(self, base: str) -> str:
@@ -313,10 +324,29 @@ class FerretCamera:
         return None
 
     def _start_stream(self, sensor: int, fmt: int) -> None:
+        if (sensor, fmt) not in {(OB_SENSOR_DEPTH, OB_FORMAT_Y14),
+                                 (OB_SENSOR_IR_RIGHT, OB_FORMAT_Y8)}:
+            raise ValueError("unsupported sensor/pixel format pair")
         self._client.call(self._method("ob_rpc_start_stream"),
                           sensor, fmt, NATIVE_WIDTH, NATIVE_HEIGHT, DEFAULT_FPS,
                           timeout=self.timeout)
         self._streaming = True
+        self._sensor, self._stream_fmt = sensor, fmt
+
+    def _stop_stream(self) -> None:
+        self._client.call(self._method("ob_rpc_stop_stream"),
+                          self._sensor, self._stream_fmt, NATIVE_WIDTH,
+                          NATIVE_HEIGHT, DEFAULT_FPS, timeout=3.0)
+        self._streaming = False
+
+    def _ensure_stream(self, sensor: int, fmt: int) -> None:
+        if self._client is None or self._suffix is None:
+            raise RuntimeError("camera not open — call open() first")
+        if self._streaming and (self._sensor, self._stream_fmt) == (sensor, fmt):
+            return
+        if self._streaming:
+            self._stop_stream()
+        self._start_stream(sensor, fmt)
 
     def _grab_frame(self, max_polls: int = 150) -> bytes:
         """Poll get_frame until a large byte slot (the image) shows up."""
@@ -327,7 +357,9 @@ class FerretCamera:
                                          timeout=self.timeout)
             slots = [bytes(x) for x in frameset
                      if isinstance(x, (bytes, bytearray)) and len(x) > 1000]
+            if len(slots) > 1:
+                raise ValueError("ambiguous RPC frameset: multiple image payloads")
             if slots:
-                return max(slots, key=len)
+                return slots[0]
             time.sleep(0.04)  # give the sensor time to warm up / produce a frame
         raise TimeoutError("no non-empty frame received within poll budget")

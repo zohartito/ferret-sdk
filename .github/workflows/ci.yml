@@ -18,7 +18,7 @@ jobs:
     name: Test on ubuntu-latest / Python 3.12
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         fetch-depth: 0
     - name: Run gitleaks
@@ -27,13 +27,19 @@ jobs:
           # No GITLEAKS_LICENSE needed: gitleaks-action is free for personal
           # (non-organization) GitHub accounts.
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    - uses: actions/setup-python@v7
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
       with:
         python-version: "3.12"
         cache: pip
     - name: Install
       run: |
+        # Open3D and PyMeshLab load system OpenGL libraries that headless runners lack;
+        # without them both imports fail and their tests skip silently.
+        sudo apt-get update -qq
+        sudo apt-get install -y --no-install-recommends libgl1 libopengl0 libegl1 libgomp1
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        pip install -r requirements-lock.txt
+    - name: Check native mesh libraries load
+      run: python -c "import open3d, pymeshlab; print('open3d', open3d.__version__)"
     - name: Run pytest
       run: pytest -q --tb=short

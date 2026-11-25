@@ -135,17 +135,29 @@ def _remove_bad_geometry(mesh: trimesh.Trimesh) -> None:
     mesh.remove_infinite_values()
 
 
-def _fill_holes_trimesh(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
+def _fill_holes_trimesh(mesh: trimesh.Trimesh, max_hole_edges: int) -> trimesh.Trimesh:
     """Fill holes with trimesh's built-in fan-triangulation filler.
 
     trimesh's filler depends on networkx; if it is not installed the mesh is
     returned unchanged rather than raising (the PyMeshLab path is preferred
     when available anyway).
     """
+    if max_hole_edges < 3:
+        return mesh
+    original_faces = len(mesh.faces)
+    boundary = {tuple(edge) for edge in mesh.edges_sorted[
+        trimesh.grouping.group_rows(mesh.edges_sorted, require_count=1)]}
     try:
         mesh.fill_holes()
     except (ImportError, ModuleNotFoundError):
         pass
+    if max_hole_edges == 3:
+        # trimesh also fills quads. Keep only additions whose three edges were
+        # all original boundary edges, excluding the two-triangle quad patches.
+        added = mesh.faces[original_faces:]
+        keep = [all(tuple(sorted((face[i], face[(i + 1) % 3]))) in boundary
+                    for i in range(3)) for face in added]
+        mesh.faces = np.vstack((mesh.faces[:original_faces], added[keep]))
     return mesh
 
 
@@ -272,13 +284,16 @@ def clean_mesh(
     mesh = _keep_largest_component(mesh)
     _remove_bad_geometry(mesh)
 
-    if _HAS_PYMESHLAB:
+    if max_hole_edges < 0:
+        raise ValueError("max_hole_edges must be nonnegative")
+    if _HAS_PYMESHLAB and max_hole_edges >= 3:
         mesh = _fill_holes_pymeshlab(mesh, max_hole_edges)
         _remove_bad_geometry(mesh)
     else:
-        mesh = _fill_holes_trimesh(mesh)
+        mesh = _fill_holes_trimesh(mesh, max_hole_edges)
 
     _recenter_and_orient(mesh)
+    recover_decimation_holes = mesh.is_watertight and len(mesh.faces) > target_faces
     mesh = _decimate(mesh, target_faces)
     _remove_bad_geometry(mesh)
 
@@ -288,7 +303,7 @@ def clean_mesh(
     # recovery fill uses a generous hole budget to close whatever boundary the
     # decimator created and restore a watertight, genus-0 solid. trimesh's filler
     # only closes small triangular gaps, so PyMeshLab is required for this step.
-    if not mesh.is_watertight and _HAS_PYMESHLAB:
+    if recover_decimation_holes and not mesh.is_watertight and _HAS_PYMESHLAB:
         mesh = _fill_holes_pymeshlab(mesh, _DECIMATION_HOLE_RECOVERY_EDGES)
         _remove_bad_geometry(mesh)
 
@@ -322,13 +337,15 @@ def watch_folder(
 
     Runs forever by default. ``max_iterations`` bounds the number of polling
     cycles, which keeps the daemon unit-testable without threads. Returns the
-    list of stats dicts for every mesh processed.
+    list of stats dicts for every mesh processed. Files must have unchanged size
+    and modification time across two polls; failed attempts are retried.
     """
     in_dir = Path(in_dir)
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     processed: set[str] = set()
+    observed: dict[str, tuple[int, int]] = {}
     results: list[dict] = []
     iterations = 0
 
@@ -340,12 +357,17 @@ def watch_folder(
                 continue
             out_path = out_dir / f"{mesh_path.stem}_clean.obj"
             try:
+                info = mesh_path.stat()
+                signature = (info.st_size, info.st_mtime_ns)
+                previous = observed.get(mesh_path.name)
+                observed[mesh_path.name] = signature
+                if previous != signature:
+                    continue
                 stats = clean_mesh(mesh_path, out_path, target_faces=target_faces)
                 results.append(stats)
-            except (ValueError, OSError) as error:
-                print(f"[meshpipe] skipped {mesh_path.name}: {error}")
-            finally:
                 processed.add(mesh_path.name)
+            except (ValueError, OSError) as error:
+                print(f"[meshpipe] will retry {mesh_path.name}: {error}")
 
         iterations += 1
         if max_iterations is None or iterations < max_iterations:
